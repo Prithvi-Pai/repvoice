@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
+import Link from 'next/link';
 import {
   Play,
   Check,
@@ -18,7 +19,10 @@ import {
   Dumbbell,
   Sparkles,
   Radio,
-  HelpCircle
+  HelpCircle,
+  ShieldCheck,
+  AlertCircle,
+  User,
 } from 'lucide-react';
 import {
   Workout,
@@ -32,6 +36,7 @@ import {
   getActiveWorkout,
   saveActiveWorkout,
   saveFinishedWorkout,
+  saveWorkoutLocally,
   getWorkoutHistory,
   getStoredProfile,
 } from '@/lib/storage';
@@ -78,10 +83,16 @@ export default function WorkoutPage() {
     });
 
     const client = getSupabaseClient();
+    let authSubscription: { unsubscribe: () => void } | null = null;
     if (client) {
       client.auth.getUser().then(({ data }) => {
         if (data?.user?.email) setUserEmail(data.user.email);
       });
+
+      const { data: { subscription } } = client.auth.onAuthStateChange((_event, session) => {
+        setUserEmail(session?.user?.email ?? null);
+      });
+      authSubscription = subscription;
     }
 
     const current = getActiveWorkout();
@@ -99,6 +110,10 @@ export default function WorkoutPage() {
         }
       });
     }
+
+    return () => {
+      if (authSubscription) authSubscription.unsubscribe();
+    };
   }, []);
 
   // Workout duration counter (continuous from start to finish, never reset by set actions)
@@ -831,7 +846,7 @@ export default function WorkoutPage() {
     }
   };
 
-  // Finish and save workout
+  // Finish and save workout to Supabase
   const handleFinishWorkout = async () => {
     if (!activeWorkout) return;
 
@@ -850,12 +865,12 @@ export default function WorkoutPage() {
     const result = await saveFinishedWorkout(workoutToSave);
 
     setIsSaving(false);
-    setShowFinishConfirm(false);
 
-    if (result.success) {
+    if (result.success && result.persistedTo === 'supabase') {
+      setShowFinishConfirm(false);
       setSaveStatus({
         type: 'success',
-        message: 'Workout successfully saved and synced!',
+        message: 'Workout successfully saved and synced to Supabase!',
       });
       setActiveWorkout(null);
       setSelectedExerciseId(null);
@@ -866,7 +881,41 @@ export default function WorkoutPage() {
     } else {
       setSaveStatus({
         type: 'error',
-        message: result.error || 'Failed to save workout.',
+        message: result.error || 'Failed to sync workout to Supabase. Sign in or save locally.',
+      });
+    }
+  };
+
+  // Save workout locally on device (Guest mode / Offline)
+  const handleSaveLocally = () => {
+    if (!activeWorkout) return;
+
+    stopContinuousListening();
+
+    const workoutToSave: Workout = {
+      ...activeWorkout,
+      completedAt: new Date().toISOString(),
+      notes: workoutNotes.trim() || undefined,
+    };
+
+    const result = saveWorkoutLocally(workoutToSave);
+    setShowFinishConfirm(false);
+
+    if (result.success) {
+      setSaveStatus({
+        type: 'info',
+        message: 'Workout saved to local storage on this device.',
+      });
+      setActiveWorkout(null);
+      setSelectedExerciseId(null);
+      setWorkoutNotes('');
+      getWorkoutHistory().then((res) => {
+        if (res.workouts.length > 0) setLastWorkout(res.workouts[0]);
+      });
+    } else {
+      setSaveStatus({
+        type: 'error',
+        message: result.error || 'Failed to save workout locally.',
       });
     }
   };
@@ -1633,6 +1682,38 @@ export default function WorkoutPage() {
               </p>
             </div>
 
+            {/* Cloud Sync vs Guest Status */}
+            {userEmail ? (
+              <div className="p-3 rounded-2xl bg-lime-950/40 border border-lime-800/60 flex items-center gap-2.5 text-xs text-lime-300">
+                <ShieldCheck className="h-4 w-4 text-lime-400 shrink-0" />
+                <div className="flex-1 truncate">
+                  <span className="font-bold">Syncing to Supabase PostgreSQL:</span>
+                  <p className="text-zinc-400 text-[11px] truncate">{userEmail}</p>
+                </div>
+              </div>
+            ) : (
+              <div className="p-3 rounded-2xl bg-amber-950/40 border border-amber-800/60 space-y-2 text-xs">
+                <div className="flex items-start gap-2 text-amber-300">
+                  <AlertCircle className="h-4 w-4 text-amber-400 shrink-0 mt-0.5" />
+                  <div>
+                    <span className="font-bold block">Guest Mode (Local Storage Only)</span>
+                    <p className="text-zinc-300 text-[11px] mt-0.5">
+                      Supabase PostgreSQL requires an athlete login. Sign in now to sync this workout to your Supabase Table Editor.
+                    </p>
+                  </div>
+                </div>
+                <div className="pt-1">
+                  <Link
+                    href="/auth"
+                    className="w-full py-2 px-3 rounded-xl bg-lime-400 hover:bg-lime-300 text-black font-extrabold text-xs flex items-center justify-center gap-1.5 transition"
+                  >
+                    <User className="h-3.5 w-3.5" />
+                    <span>Sign In to Sync to Cloud</span>
+                  </Link>
+                </div>
+              </div>
+            )}
+
             <div className="space-y-1.5">
               <label className="text-xs font-semibold text-zinc-300">
                 Workout Notes (optional):
@@ -1655,23 +1736,35 @@ export default function WorkoutPage() {
                 Keep Going
               </button>
 
-              <button
-                onClick={handleFinishWorkout}
-                disabled={isSaving}
-                className="flex-2 w-full py-3 rounded-xl bg-lime-400 hover:bg-lime-300 disabled:opacity-50 text-black font-black text-sm flex items-center justify-center gap-1.5 shadow-[0_0_20px_rgba(163,230,53,0.3)] transition cursor-pointer"
-              >
-                {isSaving ? (
-                  <>
-                    <span className="w-4 h-4 border-2 border-black border-t-transparent rounded-full animate-spin" />
-                    <span>Saving to Database...</span>
-                  </>
-                ) : (
-                  <>
-                    <Save className="h-4 w-4" />
-                    <span>Save & Finish</span>
-                  </>
-                )}
-              </button>
+              {userEmail ? (
+                <button
+                  onClick={handleFinishWorkout}
+                  disabled={isSaving}
+                  className="flex-2 w-full py-3 rounded-xl bg-lime-400 hover:bg-lime-300 disabled:opacity-50 text-black font-black text-sm flex items-center justify-center gap-1.5 shadow-[0_0_20px_rgba(163,230,53,0.3)] transition cursor-pointer"
+                >
+                  {isSaving ? (
+                    <>
+                      <span className="w-4 h-4 border-2 border-black border-t-transparent rounded-full animate-spin" />
+                      <span>Saving to Supabase...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Save className="h-4 w-4" />
+                      <span>Save & Sync</span>
+                    </>
+                  )}
+                </button>
+              ) : (
+                <button
+                  onClick={handleSaveLocally}
+                  disabled={isSaving}
+                  className="flex-2 w-full py-3 rounded-xl bg-zinc-700 hover:bg-zinc-600 text-white font-bold text-xs flex items-center justify-center gap-1.5 transition cursor-pointer"
+                  title="Saves in browser local storage only"
+                >
+                  <Save className="h-4 w-4 text-amber-400" />
+                  <span>Save Locally</span>
+                </button>
+              )}
             </div>
           </div>
         </div>

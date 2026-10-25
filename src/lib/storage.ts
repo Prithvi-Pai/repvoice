@@ -151,9 +151,32 @@ function getLocalWorkoutHistory(): Workout[] {
   }
 }
 
+// UUID validation and fallback generator
+export function isValidUUID(id: string): boolean {
+  if (!id || typeof id !== 'string') return false;
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id);
+}
+
+export function generateUUID(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    try {
+      return crypto.randomUUID();
+    } catch {
+      // fallback
+    }
+  }
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
+    const r = (Math.random() * 16) | 0;
+    const v = c === 'x' ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+}
+
 export async function saveFinishedWorkout(workout: Workout): Promise<SaveWorkoutResult> {
+  const workoutId = isValidUUID(workout.id) ? workout.id : generateUUID();
   const finishedWorkout: Workout = {
     ...workout,
+    id: workoutId,
     completedAt: workout.completedAt || new Date().toISOString(),
   };
 
@@ -169,27 +192,36 @@ export async function saveFinishedWorkout(workout: Workout): Promise<SaveWorkout
         throw new Error('You must be signed in to sync workouts with Supabase PostgreSQL.');
       }
 
-      // 1. Insert workout row
+      // 1. Upsert workout row to prevent duplicates on retries
       const { data: workoutRow, error: wError } = await client
         .from('workouts')
-        .insert({
-          user_id: user.id,
-          title: finishedWorkout.title || 'Workout Session',
-          notes: finishedWorkout.notes || null,
-          started_at: finishedWorkout.startedAt,
-          completed_at: finishedWorkout.completedAt,
-        })
+        .upsert(
+          {
+            id: workoutId,
+            user_id: user.id,
+            title: finishedWorkout.title || 'Workout Session',
+            notes: finishedWorkout.notes || null,
+            started_at: finishedWorkout.startedAt,
+            completed_at: finishedWorkout.completedAt,
+          },
+          { onConflict: 'id' }
+        )
         .select()
         .single();
 
       if (wError) throw new Error(`Workout insert failed: ${wError.message}`);
 
+      // Clean up any existing exercises from prior partial attempt to ensure idempotency
+      await client.from('workout_exercises').delete().eq('workout_id', workoutRow.id);
+
       // 2. Insert exercises and sets
       for (let i = 0; i < finishedWorkout.exercises.length; i++) {
         const ex = finishedWorkout.exercises[i];
+        const exerciseId = isValidUUID(ex.id) ? ex.id : generateUUID();
         const { data: exRow, error: exError } = await client
           .from('workout_exercises')
           .insert({
+            id: exerciseId,
             workout_id: workoutRow.id,
             exercise_name: ex.exerciseName || 'Exercise',
             order_index: i,
@@ -201,13 +233,14 @@ export async function saveFinishedWorkout(workout: Workout): Promise<SaveWorkout
 
         if (ex.sets.length > 0) {
           const setRows = ex.sets.map((s, idx) => ({
+            id: isValidUUID(s.id) ? s.id : generateUUID(),
             workout_exercise_id: exRow.id,
             set_number: s.setNumber || idx + 1,
             weight: Number(s.weight) || 0,
             reps: Number(s.reps) || 0,
             unit: s.unit || 'kg',
             is_completed: s.isCompleted ?? true,
-            rpe: s.rpe ?? null,
+            rpe: s.rpe ? Number(s.rpe) : null,
           }));
 
           const { error: setsError } = await client
@@ -218,13 +251,13 @@ export async function saveFinishedWorkout(workout: Workout): Promise<SaveWorkout
         }
       }
 
-      // Remove from active workout
+      // Only remove from active workout once Supabase confirms success
       saveActiveWorkout(null);
 
       // Keep local backup as well
       try {
         const local = getLocalWorkoutHistory();
-        const updated = [{ ...finishedWorkout, id: workoutRow.id }, ...local.filter((w) => w.id !== workout.id)];
+        const updated = [{ ...finishedWorkout, id: workoutRow.id }, ...local.filter((w) => w.id !== workout.id && w.id !== workoutRow.id)];
         localStorage.setItem(LOCAL_STORAGE_HISTORY, JSON.stringify(updated));
       } catch {
         // ignore
@@ -236,16 +269,7 @@ export async function saveFinishedWorkout(workout: Workout): Promise<SaveWorkout
       };
     } catch (e: any) {
       console.error('Supabase save error:', e);
-      // Save to local storage as fallback so athlete never loses workout data
-      try {
-        const local = getLocalWorkoutHistory();
-        const updated = [finishedWorkout, ...local.filter((w) => w.id !== workout.id)];
-        localStorage.setItem(LOCAL_STORAGE_HISTORY, JSON.stringify(updated));
-        saveActiveWorkout(null);
-      } catch {
-        // ignore
-      }
-
+      // DO NOT clear active workout here so user never loses workout progress on failed save
       return {
         success: false,
         error: e?.message || 'Database error while saving workout to Supabase.',
@@ -254,10 +278,21 @@ export async function saveFinishedWorkout(workout: Workout): Promise<SaveWorkout
     }
   }
 
-  // If Supabase is not configured, save locally
+  // If Supabase client is not available, delegate to saveWorkoutLocally
+  return saveWorkoutLocally(workout);
+}
+
+export function saveWorkoutLocally(workout: Workout): SaveWorkoutResult {
+  const workoutId = isValidUUID(workout.id) ? workout.id : generateUUID();
+  const finishedWorkout: Workout = {
+    ...workout,
+    id: workoutId,
+    completedAt: workout.completedAt || new Date().toISOString(),
+  };
+
   try {
     const local = getLocalWorkoutHistory();
-    const updated = [finishedWorkout, ...local.filter((w) => w.id !== workout.id)];
+    const updated = [finishedWorkout, ...local.filter((w) => w.id !== workout.id && w.id !== workoutId)];
     localStorage.setItem(LOCAL_STORAGE_HISTORY, JSON.stringify(updated));
     saveActiveWorkout(null);
     return {

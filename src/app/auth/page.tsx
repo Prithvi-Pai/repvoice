@@ -14,6 +14,7 @@ import {
   Dumbbell
 } from 'lucide-react';
 import { getSupabaseClient } from '@/lib/supabase/client';
+import { getActiveWorkout } from '@/lib/storage';
 import { BottomNav } from '@/components/layout/BottomNav';
 
 export default function AuthPage() {
@@ -25,8 +26,11 @@ export default function AuthPage() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [currentEmail, setCurrentEmail] = useState<string | null>(null);
+  const [hasActiveWorkout, setHasActiveWorkout] = useState(false);
 
   useEffect(() => {
+    setHasActiveWorkout(Boolean(getActiveWorkout()));
+
     const client = getSupabaseClient();
     if (client) {
       client.auth.getUser().then(({ data }) => {
@@ -90,7 +94,11 @@ export default function AuthPage() {
         }
       }
     } catch (err: any) {
-      setErrorMessage(err?.message || 'Authentication failed. Please check your credentials.');
+      let msg = err?.message || 'Authentication failed. Please check your credentials.';
+      if (typeof msg === 'string' && (msg.toLowerCase().includes('rate limit') || msg.toLowerCase().includes('over_email'))) {
+        msg = 'Supabase email rate limit reached. If you already have an account, please use Sign In.';
+      }
+      setErrorMessage(msg);
     } finally {
       setIsLoading(false);
     }
@@ -117,6 +125,16 @@ export default function AuthPage() {
           Sign in to automatically sync your workouts, sets, and volume across all devices.
         </p>
       </div>
+
+      {/* Active In-Progress Workout Notice */}
+      {hasActiveWorkout && (
+        <div className="p-3.5 rounded-2xl bg-lime-950/60 border border-lime-800/80 text-xs text-lime-300 flex items-center gap-2.5">
+          <Dumbbell className="h-4 w-4 text-lime-400 shrink-0" />
+          <p>
+            You have an active workout in progress! Signing in will keep your workout intact and allow you to sync it directly to Supabase.
+          </p>
+        </div>
+      )}
 
       {/* Already Logged In Card */}
       {currentEmail && (
