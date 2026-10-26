@@ -594,6 +594,14 @@ export function parseWorkoutCommand(
     }
   }
 
+  // If setCount was matched (e.g. "10 sets") but reps was not specified:
+  // In spoken gym logging, "10 reps" is frequently transcribed as "10 sets", or athletes say "10 sets" meaning 10 reps.
+  // If count >= 5 (or when there are no other numbers), treat it as reps.
+  if (parsedReps === undefined && setCount !== undefined && setCount >= 5) {
+    parsedReps = setCount;
+    setCount = undefined;
+  }
+
   // --- Step 9: Detect Unrecognized Spoken Exercise Candidate ---
   // If no known exercise matched, look for leftover non-filler words
   let detectedUnknownExercise: string | undefined;
@@ -650,9 +658,17 @@ export function parseWorkoutCommand(
   // 10c. Confident known exercise detected with sets/weights
   const targetExercise = detectedExercise || currentExerciseName;
 
+  const isBodyweightEx =
+    Boolean(targetExercise) &&
+    (/\b(?:pull[\s-]*ups?|chin[\s-]*ups?|push[\s-]*ups?|dips?|sit[\s-]*ups?|crunches?|planks?|lunges?|burpees?|jumping\s+jacks|mountain\s+climbers|leg\s+raises|muscle[\s-]*ups?)\b/i.test(
+      targetExercise!
+    ) || targetExercise!.toLowerCase().includes('bodyweight'));
+
   let finalWeight = parsedWeight;
   if (isSameWeight) {
     finalWeight = lastKnownWeight > 0 ? lastKnownWeight : 0;
+  } else if (finalWeight === undefined && isBodyweightEx) {
+    finalWeight = 0;
   } else if (finalWeight === undefined && targetExercise && currentExerciseName === targetExercise && lastKnownWeight > 0 && parsedReps !== undefined) {
     // If user says "8 reps" or "another set of 8" for the active exercise, carry over last weight
     finalWeight = lastKnownWeight;

@@ -685,20 +685,96 @@ export default function WorkoutPage() {
         option.action === 'SET_VALUE' ||
         option.action === 'CONFIRM_OVERWRITE'
       ) {
+        const responseText =
+          option.action === 'CONFIRM'
+            ? 'yes'
+            : typeof option.value === 'string'
+            ? option.value
+            : String(option.value ?? 'yes');
+
         const { completedCommand, nextState } = processClarificationResponse(
           clarificationState,
-          typeof option.value === 'string' ? option.value : String(option.value ?? 'yes'),
+          responseText,
           preferredUnit
         );
 
         if (completedCommand) {
+          const phrase = clarificationState.originalTranscript;
+          if ((clarificationState.step === 'CONFIRM_EXERCISE' || clarificationState.suggestedExercise) && phrase) {
+            setCustomAliases((prev) => ({
+              ...prev,
+              [phrase.toLowerCase().trim()]: completedCommand.exercise,
+            }));
+            saveLearnedAlias(phrase, completedCommand.exercise).catch((err) =>
+              console.info('Learned alias save notice:', err)
+            );
+          }
+
           setClarificationState(null);
           let currentW = activeWorkoutRef.current || activeWorkout;
           if (!currentW) currentW = handleStartWorkout('Voice Workout');
           executeDirectSetCommand(completedCommand, currentW);
+          setSaveStatus({
+            type: 'success',
+            message: `Confirmed ${completedCommand.exercise}: ${completedCommand.weight} ${completedCommand.unit} × ${completedCommand.reps} reps.`,
+          });
         } else if (nextState) {
           setClarificationState(nextState);
           playSoundChime();
+          setSaveStatus({ type: 'info', message: nextState.questionPrompt });
+        } else {
+          setClarificationState(null);
+        }
+      } else if (option.action === 'CORRECT') {
+        if (typeof option.value === 'string' && option.value.trim()) {
+          // Exercise replacement selected or typed
+          const replacementName = toTitleCase(option.value.trim());
+          const completedCmd = {
+            type: 'ADD_SET' as const,
+            exercise: replacementName,
+            weight: clarificationState.weight ?? 0,
+            reps: clarificationState.reps ?? 10,
+            unit: clarificationState.unit || preferredUnit,
+            setNumber: clarificationState.setNumber,
+            rawTranscript: clarificationState.originalTranscript,
+          };
+          const phrase = clarificationState.originalTranscript;
+          if (phrase) {
+            setCustomAliases((prev) => ({
+              ...prev,
+              [phrase.toLowerCase().trim()]: replacementName,
+            }));
+            saveLearnedAlias(phrase, replacementName).catch((err) =>
+              console.info('Learned replacement alias save notice:', err)
+            );
+          }
+          setClarificationState(null);
+          let currentW = activeWorkoutRef.current || activeWorkout;
+          if (!currentW) currentW = handleStartWorkout('Voice Workout');
+          executeDirectSetCommand(completedCmd, currentW);
+          setSaveStatus({
+            type: 'success',
+            message: `Logged ${replacementName}: ${completedCmd.weight} ${completedCmd.unit} × ${completedCmd.reps} reps.`,
+          });
+        } else if (typeof option.value === 'number') {
+          // Custom weight entered
+          const completedCmd = {
+            type: 'ADD_SET' as const,
+            exercise: clarificationState.exerciseName || clarificationState.suggestedExercise || 'Exercise',
+            weight: option.value,
+            reps: clarificationState.reps ?? 10,
+            unit: clarificationState.unit || preferredUnit,
+            setNumber: clarificationState.setNumber,
+            rawTranscript: clarificationState.originalTranscript,
+          };
+          setClarificationState(null);
+          let currentW = activeWorkoutRef.current || activeWorkout;
+          if (!currentW) currentW = handleStartWorkout('Voice Workout');
+          executeDirectSetCommand(completedCmd, currentW);
+          setSaveStatus({
+            type: 'success',
+            message: `Logged ${completedCmd.exercise}: ${completedCmd.weight} ${completedCmd.unit} × ${completedCmd.reps} reps.`,
+          });
         } else {
           setClarificationState(null);
         }
@@ -734,6 +810,37 @@ export default function WorkoutPage() {
       );
 
       console.log('Voice Command Received:', command);
+
+      // If the incoming command explicitly names an exercise, immediately switch active focus to it
+      if ('exercise' in command && command.exercise) {
+        const targetExName = command.exercise;
+        let currentW = activeWorkoutRef.current || currentWorkout;
+        const existingEx = currentW.exercises.find(
+          (e) => e.exerciseName.toLowerCase() === targetExName.toLowerCase()
+        );
+        if (existingEx) {
+          if (selectedExerciseIdRef.current !== existingEx.id) {
+            updateSelectedExerciseId(existingEx.id);
+          }
+        } else {
+          const newExId =
+            typeof crypto !== 'undefined' && crypto.randomUUID
+              ? crypto.randomUUID()
+              : `ex_${Date.now()}`;
+          const newEx: WorkoutExercise = {
+            id: newExId,
+            exerciseName: targetExName,
+            sets: [],
+          };
+          const updatedW = {
+            ...currentW,
+            exercises: [...currentW.exercises, newEx],
+          };
+          updateWorkout(updatedW);
+          updateSelectedExerciseId(newExId);
+          currentWorkout = updatedW;
+        }
+      }
 
       // 1. Process active clarification response if waiting for athlete input
       if (clarificationState) {
@@ -777,6 +884,16 @@ export default function WorkoutPage() {
           );
 
           if (completedCommand) {
+            const phrase = clarificationState.originalTranscript;
+            if ((clarificationState.step === 'CONFIRM_EXERCISE' || clarificationState.suggestedExercise) && phrase) {
+              setCustomAliases((prev) => ({
+                ...prev,
+                [phrase.toLowerCase().trim()]: completedCommand.exercise,
+              }));
+              saveLearnedAlias(phrase, completedCommand.exercise).catch((err) =>
+                console.info('Learned alias save notice:', err)
+              );
+            }
             setClarificationState(null);
             executeDirectSetCommand(completedCommand, currentWorkout);
             return;
@@ -1929,7 +2046,7 @@ export default function WorkoutPage() {
                     </span>
                   ) : lastFinalTranscript ? (
                     <span className="text-zinc-400">
-                      Last logged: <span className="text-zinc-200">“{lastFinalTranscript}”</span>
+                      Heard: <span className="text-zinc-200">“{lastFinalTranscript}”</span>
                     </span>
                   ) : (
                     <span className="text-zinc-500 italic">

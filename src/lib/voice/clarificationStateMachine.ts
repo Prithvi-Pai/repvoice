@@ -178,13 +178,13 @@ export function evaluateClarificationNeed(input: ParseCandidateInput): Clarifica
         { label: `Bodyweight (0 ${unit})`, action: 'SET_VALUE', value: 0 },
         { label: `20 ${unit}`, action: 'SET_VALUE', value: 20 },
         { label: `40 ${unit}`, action: 'SET_VALUE', value: 40 },
-        { label: 'Speak weight', action: 'CORRECT' },
+        { label: 'Say another weight', action: 'CORRECT' },
       ],
     };
   }
 
   // 5. Missing both repetitions and weight on a set command
-  if (targetExerciseName && parsedWeight === undefined && parsedReps === undefined && !isSameWeight && (parsedSetNumber !== undefined || isNextSet)) {
+  if (targetExerciseName && parsedWeight === undefined && parsedReps === undefined && !isSameWeight) {
     return {
       step: 'ASK_REPS',
       exerciseName: targetExerciseName,
@@ -220,8 +220,11 @@ export function processClarificationResponse(
     return { nextState: null };
   }
 
-  // 2. Affirmative responses ("Yes", "Yeah", "Correct", "Save it", "Log it", "Right")
-  const isAffirmative = /^(?:yes|yeah|yep|yup|correct|sure|right|confirm|save it|log it|ok|okay)\b/i.test(text);
+  // 2. Affirmative responses ("Yes", "Yeah", "Correct", "Save it", "Log it", "Right", or the suggested candidate name)
+  const isAffirmative =
+    /^(?:yes|yeah|yep|yup|correct|sure|right|confirm|save it|log it|ok|okay)\b/i.test(text) ||
+    (Boolean(currentClarification.suggestedExercise) &&
+      text === currentClarification.suggestedExercise!.toLowerCase().trim());
 
   if (isAffirmative) {
     if (currentClarification.step === 'CONFIRM_EXERCISE') {
@@ -255,6 +258,7 @@ export function processClarificationResponse(
               { label: `Bodyweight`, action: 'SET_VALUE', value: 0 },
               { label: `20 ${preferredUnit}`, action: 'SET_VALUE', value: 20 },
               { label: `40 ${preferredUnit}`, action: 'SET_VALUE', value: 40 },
+              { label: 'Say another weight', action: 'CORRECT' },
             ],
           },
         };
@@ -350,7 +354,7 @@ export function processClarificationResponse(
         nextState: null,
         completedCommand: {
           type: 'ADD_SET',
-          exercise: currentClarification.exerciseName,
+          exercise: currentClarification.exerciseName || currentClarification.suggestedExercise || 'Exercise',
           weight: num,
           reps: currentClarification.reps ?? 10,
           unit: currentClarification.unit || preferredUnit,
