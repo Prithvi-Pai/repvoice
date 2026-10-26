@@ -202,3 +202,36 @@ export interface SaveWorkoutResult {
   error?: string;
   persistedTo: 'supabase' | 'local_fallback';
 }
+
+export type MuscleGroup = 'chest' | 'back' | 'legs' | 'shoulders' | 'arms' | 'core' | 'full_body';
+
+export interface ExerciseVariation {
+  name: string;
+  muscleGroup: MuscleGroup;
+  reason: string;
+}
+
+export interface RecommendedExerciseItem {
+  id: string;
+  exerciseName: string;
+  muscleGroup: MuscleGroup;
+  targetSets: number;
+  targetReps: number;
+  targetWeight?: number;
+  unit: WeightUnit;
+  explanation: string;
+  progressionNote?: string;
+  variations: ExerciseVariation[];
+}
+
+export interface DailyWorkoutRecommendation {
+  type: 'workout' | 'rest';
+  title: string;
+  subtitle: string;
+  primaryMuscleGroup: string;
+  explanation: string;
+  isPersonalized: boolean;
+  isRestDay: boolean;
+  exercises: RecommendedExerciseItem[];
+  generatedForDate: string;
+}

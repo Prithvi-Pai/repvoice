@@ -33,6 +33,7 @@ import {
   PendingExerciseConfirmation,
   ClarificationState,
   ClarificationOption,
+  DailyWorkoutRecommendation,
 } from '@/types';
 import {
   getActiveWorkout,
@@ -70,6 +71,9 @@ import {
   prewarmGymNoiseReduction,
   releaseGymNoiseReduction,
 } from '@/lib/voice/audioCaptureEnhancer';
+import { DailyRecommendationCard } from '@/components/workout/DailyRecommendationCard';
+import { generateDailyRecommendation } from '@/lib/recommendation/recommendationEngine';
+import { getLocalDateKey } from '@/lib/history/dateGrouping';
 
 export default function WorkoutPage() {
   const [activeWorkout, setActiveWorkout] = useState<Workout | null>(null);
@@ -92,11 +96,29 @@ export default function WorkoutPage() {
   const [preferredUnit, setPreferredUnit] = useState<WeightUnit>('kg');
   const [clarificationState, setClarificationState] = useState<ClarificationState | null>(null);
   const [activeSetTimer, setActiveSetTimer] = useState<ActiveSetTimerState | null>(null);
+  const [workoutHistory, setWorkoutHistory] = useState<Workout[]>([]);
+  const [dailyRecommendation, setDailyRecommendation] = useState<DailyWorkoutRecommendation | null>(null);
+  const [isRecommendationDismissed, setIsRecommendationDismissed] = useState<boolean>(false);
+
+  const refreshRecommendations = useCallback((unit: WeightUnit) => {
+    getWorkoutHistory().then((res) => {
+      const historyList = res.workouts || [];
+      setWorkoutHistory(historyList);
+      if (historyList.length > 0) {
+        setLastWorkout(historyList[0]);
+      }
+      const todayKey = getLocalDateKey(new Date());
+      const rec = generateDailyRecommendation(historyList, todayKey, unit);
+      setDailyRecommendation(rec);
+    });
+  }, []);
 
   // Load active workout or past workouts on mount
   useEffect(() => {
     const profile = getStoredProfile();
-    setPreferredUnit(profile.preferredUnit || 'kg');
+    const unit = profile.preferredUnit || 'kg';
+    setPreferredUnit(unit);
+    refreshRecommendations(unit);
 
     syncAndLoadAllAliases().then((aliases) => {
       setCustomAliases(aliases);
@@ -123,18 +145,12 @@ export default function WorkoutPage() {
       }
       const startMs = new Date(current.startedAt).getTime();
       setElapsedSeconds(Math.max(0, Math.floor((Date.now() - startMs) / 1000)));
-    } else {
-      getWorkoutHistory().then((res) => {
-        if (res.workouts && res.workouts.length > 0) {
-          setLastWorkout(res.workouts[0]);
-        }
-      });
     }
 
     return () => {
       if (authSubscription) authSubscription.unsubscribe();
     };
-  }, []);
+  }, [refreshRecommendations]);
 
   // Workout duration counter (continuous from start to finish, never reset by set actions)
   useEffect(() => {
@@ -185,6 +201,36 @@ export default function WorkoutPage() {
     setSaveStatus(null);
     return newWorkout;
   }, [updateWorkout]);
+
+  // Accept a daily recommended workout and initialize with suggested exercises
+  const handleAcceptRecommendation = useCallback(
+    (rec: DailyWorkoutRecommendation) => {
+      const newWorkout = handleStartWorkout(rec.title);
+      if (rec.exercises && rec.exercises.length > 0) {
+        const initialExercises: WorkoutExercise[] = rec.exercises.map((recEx, idx) => ({
+          id:
+            typeof crypto !== 'undefined' && crypto.randomUUID
+              ? crypto.randomUUID()
+              : `ex_${Date.now()}_${idx}`,
+          exerciseName: recEx.exerciseName,
+          sets: [],
+        }));
+        const populated = {
+          ...newWorkout,
+          exercises: initialExercises,
+        };
+        updateWorkout(populated);
+        if (initialExercises.length > 0) {
+          setSelectedExerciseId(initialExercises[0].id);
+        }
+      }
+      setSaveStatus({
+        type: 'success',
+        message: `Started ${rec.title}. Log your sets anytime by voice or tapping!`,
+      });
+    },
+    [handleStartWorkout, updateWorkout]
+  );
 
   // Audio confirmation chime
   const playSoundChime = useCallback(() => {
@@ -1192,9 +1238,7 @@ export default function WorkoutPage() {
       setActiveWorkout(null);
       setSelectedExerciseId(null);
       setWorkoutNotes('');
-      getWorkoutHistory().then((res) => {
-        if (res.workouts.length > 0) setLastWorkout(res.workouts[0]);
-      });
+      refreshRecommendations(preferredUnit);
     } else {
       setSaveStatus({
         type: 'error',
@@ -1226,9 +1270,7 @@ export default function WorkoutPage() {
       setActiveWorkout(null);
       setSelectedExerciseId(null);
       setWorkoutNotes('');
-      getWorkoutHistory().then((res) => {
-        if (res.workouts.length > 0) setLastWorkout(res.workouts[0]);
-      });
+      refreshRecommendations(preferredUnit);
     } else {
       setSaveStatus({
         type: 'error',
@@ -1370,6 +1412,28 @@ export default function WorkoutPage() {
               </button>
             </div>
           </div>
+
+          {/* Daily Recommendation Section ("Your workout for today") */}
+          {dailyRecommendation && !isRecommendationDismissed && (
+            <DailyRecommendationCard
+              recommendation={dailyRecommendation}
+              workouts={workoutHistory}
+              preferredUnit={preferredUnit}
+              onAcceptWorkout={handleAcceptRecommendation}
+              onDismiss={() => setIsRecommendationDismissed(true)}
+              onOverrideRestDay={() => {
+                const todayKey = getLocalDateKey(new Date());
+                const overrideRec = generateDailyRecommendation([], todayKey, preferredUnit);
+                setDailyRecommendation({
+                  ...overrideRec,
+                  title: 'Optional Active Session',
+                  subtitle: 'Light training session override',
+                  explanation: 'Athlete requested workout override on scheduled rest day.',
+                  isRestDay: false,
+                });
+              }}
+            />
+          )}
 
           {/* Quick Workout Splits */}
           <div className="space-y-2.5">

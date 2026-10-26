@@ -1,5 +1,7 @@
 node_modules/
 .next/
+build_output/
+.next_dist/
 .env
 .env.*
 !.env.example
