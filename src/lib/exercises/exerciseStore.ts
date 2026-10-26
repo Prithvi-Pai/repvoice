@@ -1,4 +1,4 @@
-import { getSupabaseClient } from '@/lib/supabase/client';
+import { getSupabaseClient } from '../supabase/client';
 
 const LOCAL_STORAGE_ALIASES_KEY = 'repvoice_custom_aliases';
 const LOCAL_STORAGE_EXERCISES_KEY = 'repvoice_custom_exercises';

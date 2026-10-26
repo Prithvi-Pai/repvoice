@@ -367,6 +367,34 @@ export function parseWorkoutCommand(
     };
   }
 
+  // C) Start set command (activates per-set timer)
+  if (/\b(?:start|begin)\s+(?:the\s+)?set\b/i.test(working)) {
+    return {
+      type: 'START_SET',
+      rawTranscript: text,
+    };
+  }
+
+  // D) Undo last entry command
+  if (/\b(?:undo|undo\s+that|undo\s+last|revert|undo\s+the\s+last\s+entry)\b/i.test(working)) {
+    return {
+      type: 'UNDO_LAST',
+      rawTranscript: text,
+    };
+  }
+
+  // E) Modify last set command (e.g. "Change my last set to 35 kilos")
+  if (/\b(?:change|modify)\s+(?:my\s+)?last\s+set\b/i.test(working)) {
+    const wMatch = working.match(/(\d+(?:\.\d+)?)\s*(?:kg|kilos?|lbs?|pounds?)/i);
+    const rMatch = working.match(/(\d+)\s*(?:reps?|repetitions?)/i);
+    return {
+      type: 'MODIFY_LAST',
+      weight: wMatch ? parseFloat(wMatch[1]) : undefined,
+      reps: rMatch ? parseInt(rMatch[1], 10) : undefined,
+      rawTranscript: text,
+    };
+  }
+
   // --- Step 4: Extract Explicit Set Number & Multi-Set Counts ---
   let explicitSetNumber: number | undefined;
   let setCount: number | undefined;

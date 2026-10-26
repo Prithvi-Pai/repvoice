@@ -31,6 +31,8 @@ import {
   WeightUnit,
   WorkoutVoiceCommand,
   PendingExerciseConfirmation,
+  ClarificationState,
+  ClarificationOption,
 } from '@/types';
 import {
   getActiveWorkout,
@@ -52,6 +54,22 @@ import {
   saveLearnedAlias,
   toTitleCase,
 } from '@/lib/exercises/exerciseStore';
+import { VoiceClarificationModal } from '@/components/workout/VoiceClarificationModal';
+import { SetTimerBadge } from '@/components/workout/SetTimerBadge';
+import {
+  ActiveSetTimerState,
+  startSetTimer,
+  completeSetTimer,
+  formatSetDuration,
+} from '@/lib/voice/setTimerManager';
+import {
+  evaluateClarificationNeed,
+  processClarificationResponse,
+} from '@/lib/voice/clarificationStateMachine';
+import {
+  prewarmGymNoiseReduction,
+  releaseGymNoiseReduction,
+} from '@/lib/voice/audioCaptureEnhancer';
 
 export default function WorkoutPage() {
   const [activeWorkout, setActiveWorkout] = useState<Workout | null>(null);
@@ -72,6 +90,8 @@ export default function WorkoutPage() {
   const [lastWorkout, setLastWorkout] = useState<Workout | null>(null);
   const [userEmail, setUserEmail] = useState<string | null>(null);
   const [preferredUnit, setPreferredUnit] = useState<WeightUnit>('kg');
+  const [clarificationState, setClarificationState] = useState<ClarificationState | null>(null);
+  const [activeSetTimer, setActiveSetTimer] = useState<ActiveSetTimerState | null>(null);
 
   // Load active workout or past workouts on mount
   useEffect(() => {
@@ -339,6 +359,219 @@ export default function WorkoutPage() {
     [activeWorkout, setTimerSeconds, handleStartWorkout, updateWorkout, playSoundChime]
   );
 
+  // Execute direct set insertion/update
+  const executeDirectSetCommand = useCallback(
+    (
+      command: {
+        exercise: string;
+        weight: number;
+        reps: number;
+        unit: WeightUnit;
+        setNumber?: number;
+        isOverwrite?: boolean;
+      },
+      currentWorkout: Workout
+    ) => {
+      const existingIdx = currentWorkout.exercises.findIndex(
+        (e) => e.exerciseName.toLowerCase() === command.exercise.toLowerCase()
+      );
+
+      let updatedExercises = [...currentWorkout.exercises];
+      let targetExerciseId: string;
+      let currentDuration = setTimerSeconds;
+
+      if (activeSetTimer && activeSetTimer.isRunning) {
+        const timing = completeSetTimer(activeSetTimer);
+        currentDuration = timing.durationSeconds;
+        setActiveSetTimer(null);
+      }
+      setSetTimerSeconds(0);
+
+      // Overwrite if requested
+      if (
+        existingIdx >= 0 &&
+        command.setNumber !== undefined &&
+        (command.isOverwrite || updatedExercises[existingIdx].sets.some((s) => s.setNumber === command.setNumber))
+      ) {
+        const ex = updatedExercises[existingIdx];
+        const updatedSets = ex.sets.map((s) =>
+          s.setNumber === command.setNumber
+            ? {
+                ...s,
+                weight: command.weight,
+                reps: command.reps,
+                unit: command.unit,
+                isCompleted: true,
+                durationSeconds: currentDuration > 0 ? currentDuration : s.durationSeconds,
+              }
+            : s
+        );
+        updatedExercises[existingIdx] = { ...ex, sets: updatedSets };
+        targetExerciseId = ex.id;
+        setSaveStatus({
+          type: 'success',
+          message: `Updated Set #${command.setNumber} on ${command.exercise}: ${command.weight} ${command.unit} × ${command.reps} reps`,
+        });
+      } else {
+        const targetSetNum =
+          command.setNumber !== undefined
+            ? command.setNumber
+            : existingIdx >= 0
+            ? updatedExercises[existingIdx].sets.length + 1
+            : 1;
+
+        const newSet: WorkoutSet = {
+          id: typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `s_${Date.now()}`,
+          setNumber: targetSetNum,
+          weight: command.weight,
+          reps: command.reps,
+          unit: command.unit,
+          isCompleted: true,
+          durationSeconds: currentDuration > 0 ? currentDuration : undefined,
+          status: 'completed',
+        };
+
+        if (existingIdx >= 0) {
+          const ex = updatedExercises[existingIdx];
+          updatedExercises[existingIdx] = {
+            ...ex,
+            sets: [...ex.sets, newSet],
+          };
+          targetExerciseId = ex.id;
+        } else {
+          targetExerciseId = typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `ex_${Date.now()}`;
+          updatedExercises.push({
+            id: targetExerciseId,
+            exerciseName: command.exercise,
+            sets: [newSet],
+          });
+        }
+
+        setSaveStatus({
+          type: 'success',
+          message: `Added Set #${targetSetNum} to ${command.exercise}: ${command.weight} ${command.unit} × ${command.reps} reps`,
+        });
+      }
+
+      updateWorkout({ ...currentWorkout, exercises: updatedExercises });
+      setSelectedExerciseId(targetExerciseId);
+      setShowRestTimer(true);
+      playSoundChime();
+    },
+    [activeSetTimer, setTimerSeconds, updateWorkout, playSoundChime]
+  );
+
+  // Undo last logged set
+  const handleUndoLast = useCallback(() => {
+    if (!activeWorkout || activeWorkout.exercises.length === 0) {
+      setSaveStatus({ type: 'info', message: 'No sets to undo.' });
+      return;
+    }
+
+    const updatedExercises = [...activeWorkout.exercises];
+    let removed = false;
+
+    for (let i = updatedExercises.length - 1; i >= 0; i--) {
+      const ex = updatedExercises[i];
+      if (ex.sets.length > 0) {
+        const lastSet = ex.sets[ex.sets.length - 1];
+        const newSets = ex.sets.slice(0, -1);
+        updatedExercises[i] = { ...ex, sets: newSets };
+        removed = true;
+        setSaveStatus({
+          type: 'info',
+          message: `Undid Set #${lastSet.setNumber} on ${ex.exerciseName}.`,
+        });
+        break;
+      }
+    }
+
+    if (removed) {
+      updateWorkout({ ...activeWorkout, exercises: updatedExercises });
+      playSoundChime();
+    }
+  }, [activeWorkout, updateWorkout, playSoundChime]);
+
+  // Modify last logged set
+  const handleModifyLast = useCallback(
+    (command: { weight?: number; reps?: number; unit?: WeightUnit }) => {
+      if (!activeWorkout || activeWorkout.exercises.length === 0) {
+        setSaveStatus({ type: 'info', message: 'No sets to modify.' });
+        return;
+      }
+
+      const updatedExercises = [...activeWorkout.exercises];
+      let modified = false;
+
+      for (let i = updatedExercises.length - 1; i >= 0; i--) {
+        const ex = updatedExercises[i];
+        if (ex.sets.length > 0) {
+          const lastIdx = ex.sets.length - 1;
+          const currentSet = ex.sets[lastIdx];
+          const newWeight = command.weight !== undefined ? command.weight : currentSet.weight;
+          const newReps = command.reps !== undefined ? command.reps : currentSet.reps;
+          const newUnit = command.unit !== undefined ? command.unit : currentSet.unit;
+
+          ex.sets[lastIdx] = {
+            ...currentSet,
+            weight: newWeight,
+            reps: newReps,
+            unit: newUnit,
+          };
+          modified = true;
+          setSaveStatus({
+            type: 'success',
+            message: `Updated last set on ${ex.exerciseName}: ${newWeight} ${newUnit} × ${newReps} reps.`,
+          });
+          break;
+        }
+      }
+
+      if (modified) {
+        updateWorkout({ ...activeWorkout, exercises: updatedExercises });
+        playSoundChime();
+      }
+    },
+    [activeWorkout, updateWorkout, playSoundChime]
+  );
+
+  // Handle clarification option button click
+  const handleClarificationOption = useCallback(
+    (option: ClarificationOption) => {
+      if (!clarificationState) return;
+
+      if (
+        option.action === 'CONFIRM' ||
+        option.action === 'SET_VALUE' ||
+        option.action === 'CONFIRM_OVERWRITE'
+      ) {
+        const { completedCommand, nextState } = processClarificationResponse(
+          clarificationState,
+          typeof option.value === 'string' ? option.value : String(option.value ?? 'yes'),
+          preferredUnit
+        );
+
+        if (completedCommand) {
+          setClarificationState(null);
+          let currentW = activeWorkout;
+          if (!currentW) currentW = handleStartWorkout('Voice Workout');
+          executeDirectSetCommand(completedCommand, currentW);
+        } else if (nextState) {
+          setClarificationState(nextState);
+          playSoundChime();
+        } else {
+          setClarificationState(null);
+        }
+      } else if (option.action === 'REJECT') {
+        setShowManualCorrection(true);
+        setClarificationState(null);
+      } else {
+        setClarificationState(null);
+      }
+    },
+    [clarificationState, activeWorkout, preferredUnit, handleStartWorkout, executeDirectSetCommand, playSoundChime]
+  );
+
   // Continuous Voice Command Dispatcher
   const handleVoiceCommand = useCallback(
     (finalTranscript: string) => {
@@ -346,6 +579,31 @@ export default function WorkoutPage() {
       let currentWorkout = activeWorkout;
       if (!currentWorkout) {
         currentWorkout = handleStartWorkout('Continuous Voice Workout');
+      }
+
+      // 1. Process active clarification response if waiting for athlete input
+      if (clarificationState) {
+        const { nextState, completedCommand } = processClarificationResponse(
+          clarificationState,
+          finalTranscript,
+          preferredUnit
+        );
+
+        if (completedCommand) {
+          setClarificationState(null);
+          executeDirectSetCommand(completedCommand, currentWorkout);
+          return;
+        }
+
+        if (nextState) {
+          setClarificationState(nextState);
+          playSoundChime();
+          setSaveStatus({ type: 'info', message: nextState.questionPrompt });
+          return;
+        }
+
+        setClarificationState(null);
+        return;
       }
 
       const { exercise: currentEx, lastWeight } = getActiveExerciseContext();
@@ -362,10 +620,62 @@ export default function WorkoutPage() {
 
       console.log('Voice Command Received:', command);
 
+      // 2. Control Commands
+      if (command.type === 'START_SET') {
+        const targetExId = currentEx?.id || (currentWorkout.exercises.length > 0 ? currentWorkout.exercises[0].id : 'active_ex');
+        const nextSetNumber = currentEx ? currentEx.sets.length + 1 : 1;
+        setActiveSetTimer(startSetTimer(targetExId, nextSetNumber));
+        playSoundChime();
+        setSaveStatus({
+          type: 'info',
+          message: `Set #${nextSetNumber} timer started! Say 'Set done' when completed.`,
+        });
+        return;
+      }
+
+      if (command.type === 'UNDO_LAST') {
+        handleUndoLast();
+        return;
+      }
+
+      if (command.type === 'MODIFY_LAST') {
+        handleModifyLast(command);
+        return;
+      }
+
+      // 3. Check for missing fields or repeated exercise disambiguation
+      if (command.type === 'ADD_SET' || command.type === 'CONFIRM_EXERCISE') {
+        const clarificationNeeded = evaluateClarificationNeed({
+          rawTranscript: finalTranscript,
+          detectedExercise: command.type === 'ADD_SET' ? command.exercise : undefined,
+          detectedUnknownExercise: command.type === 'CONFIRM_EXERCISE' ? command.spokenPhrase : undefined,
+          parsedWeight: 'weight' in command ? command.weight : undefined,
+          parsedReps: 'reps' in command ? command.reps : undefined,
+          parsedSetNumber: 'setNumber' in command ? command.setNumber : undefined,
+          unit: 'unit' in command ? command.unit : preferredUnit,
+          currentWorkout,
+          selectedExerciseId,
+          preferredUnit,
+          customAliases,
+        });
+
+        if (clarificationNeeded) {
+          setClarificationState(clarificationNeeded);
+          playSoundChime();
+          setSaveStatus({ type: 'info', message: clarificationNeeded.questionPrompt });
+          return;
+        }
+      }
+
       switch (command.type) {
         case 'SET_DONE': {
-          // Finalize current set timer, do NOT create a new set
-          const duration = setTimerSeconds;
+          // Finalize set timer
+          let duration = setTimerSeconds;
+          if (activeSetTimer && activeSetTimer.isRunning) {
+            const timing = completeSetTimer(activeSetTimer);
+            duration = timing.durationSeconds;
+            setActiveSetTimer(null);
+          }
           setSetTimerSeconds(0);
 
           let updatedExercises = [...currentWorkout.exercises];
@@ -713,11 +1023,16 @@ export default function WorkoutPage() {
       setTimerSeconds,
       customAliases,
       pendingConfirmation,
+      clarificationState,
+      activeSetTimer,
       handleStartWorkout,
       updateWorkout,
       getActiveExerciseContext,
       playSoundChime,
       executeConfirmExercise,
+      executeDirectSetCommand,
+      handleUndoLast,
+      handleModifyLast,
     ]
   );
 
@@ -738,12 +1053,14 @@ export default function WorkoutPage() {
   // Toggle Continuous Listening
   const toggleContinuousListening = () => {
     if (isListeningDesired) {
+      releaseGymNoiseReduction();
       stopContinuousListening();
       setSaveStatus({ type: 'info', message: 'Continuous listening paused.' });
     } else {
       if (!activeWorkout) {
         handleStartWorkout('Voice Workout');
       }
+      prewarmGymNoiseReduction().catch(() => {});
       startContinuousListening();
       setSaveStatus({ type: 'info', message: 'Continuous listening active. Speak anytime.' });
     }
@@ -1193,6 +1510,46 @@ export default function WorkoutPage() {
             <RestTimer onClose={() => setShowRestTimer(false)} />
           )}
 
+          {/* Active Per-Set Duration Timer Badge (Feature 3) */}
+          {activeSetTimer && (
+            <SetTimerBadge
+              timer={activeSetTimer}
+              exerciseName={getActiveExerciseContext().exercise?.exerciseName}
+              onComplete={() => {
+                const timing = completeSetTimer(activeSetTimer);
+                setActiveSetTimer(null);
+                const { exercise: currentEx } = getActiveExerciseContext();
+                if (currentEx && currentEx.sets.length > 0) {
+                  const updatedExercises = [...activeWorkout.exercises];
+                  const exIdx = updatedExercises.findIndex((e) => e.id === currentEx.id);
+                  if (exIdx >= 0) {
+                    const sets = [...updatedExercises[exIdx].sets];
+                    const lastIdx = sets.length - 1;
+                    sets[lastIdx] = {
+                      ...sets[lastIdx],
+                      isCompleted: true,
+                      startedAt: timing.startedAt,
+                      completedAt: timing.completedAt,
+                      durationSeconds: timing.durationSeconds,
+                    };
+                    updatedExercises[exIdx] = { ...updatedExercises[exIdx], sets };
+                    updateWorkout({ ...activeWorkout, exercises: updatedExercises });
+                  }
+                }
+                setShowRestTimer(true);
+                playSoundChime();
+                setSaveStatus({
+                  type: 'success',
+                  message: `Set #${activeSetTimer.setNumber} completed in ${timing.formattedDuration}! Rest timer started.`,
+                });
+              }}
+              onCancel={() => {
+                setActiveSetTimer(null);
+                setSaveStatus({ type: 'info', message: 'Set timer cancelled.' });
+              }}
+            />
+          )}
+
           {/* PERSISTENT WORKOUT LISTENING CONTROL CARD */}
           <div className="p-4 rounded-3xl bg-zinc-900 border border-zinc-800 shadow-xl space-y-3">
             <div className="flex items-center justify-between">
@@ -1539,9 +1896,14 @@ export default function WorkoutPage() {
                             : 'bg-zinc-950/70 border-zinc-800/80 text-zinc-300'
                         }`}
                       >
-                        {/* Set Number */}
-                        <div className="col-span-2 font-bold text-xs text-zinc-400">
-                          #{set.setNumber}
+                        {/* Set Number & Duration */}
+                        <div className="col-span-2 flex flex-col justify-center">
+                          <span className="font-bold text-xs text-zinc-400">#{set.setNumber}</span>
+                          {set.durationSeconds ? (
+                            <span className="text-[10px] font-mono text-amber-400 font-bold">
+                              {formatSetDuration(set.durationSeconds)}
+                            </span>
+                          ) : null}
                         </div>
 
                         {/* Weight Stepper / Input */}
@@ -1641,14 +2003,31 @@ export default function WorkoutPage() {
                     ))}
                   </div>
 
-                  {/* Add Set Button */}
-                  <div onClick={(e) => e.stopPropagation()}>
+                  {/* Set Action Buttons */}
+                  <div className="flex gap-2" onClick={(e) => e.stopPropagation()}>
                     <button
                       onClick={() => handleAddSet(exIndex)}
-                      className="w-full py-2 rounded-xl bg-zinc-800/80 hover:bg-zinc-800 text-xs font-bold text-zinc-300 flex items-center justify-center gap-1.5 transition cursor-pointer"
+                      className="flex-1 py-2 rounded-xl bg-zinc-800/80 hover:bg-zinc-800 text-xs font-bold text-zinc-300 flex items-center justify-center gap-1.5 transition cursor-pointer"
                     >
                       <Plus className="h-3.5 w-3.5 text-lime-400" />
                       <span>Add Set</span>
+                    </button>
+
+                    <button
+                      onClick={() => {
+                        const targetEx = activeWorkout.exercises[exIndex];
+                        const nextNum = targetEx.sets.length + 1;
+                        setActiveSetTimer(startSetTimer(targetEx.id, nextNum));
+                        playSoundChime();
+                        setSaveStatus({
+                          type: 'info',
+                          message: `Timer started for ${targetEx.exerciseName} Set #${nextNum}. Say 'Set done' when completed.`,
+                        });
+                      }}
+                      className="flex-1 py-2 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 text-amber-300 text-xs font-bold flex items-center justify-center gap-1.5 transition cursor-pointer"
+                    >
+                      <Timer className="h-3.5 w-3.5 text-amber-400" />
+                      <span>Start Set Timer</span>
                     </button>
                   </div>
                 </div>
@@ -1768,6 +2147,15 @@ export default function WorkoutPage() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Voice Clarification Multi-Turn Modal (Feature 1 & 2) */}
+      {clarificationState && (
+        <VoiceClarificationModal
+          clarification={clarificationState}
+          onSelectOption={handleClarificationOption}
+          onDismiss={() => setClarificationState(null)}
+        />
       )}
 
       {/* Persistent Bottom Nav */}

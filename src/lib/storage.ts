@@ -1,4 +1,4 @@
-import { Workout, WorkoutExercise, WorkoutSet, UserProfile, SaveWorkoutResult } from '@/types';
+import { Workout, WorkoutExercise, WorkoutSet, UserProfile, SaveWorkoutResult } from '../types';
 import { getSupabaseClient } from './supabase/client';
 
 const LOCAL_STORAGE_ACTIVE_WORKOUT = 'repvoice_active_workout';

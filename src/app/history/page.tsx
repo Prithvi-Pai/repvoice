@@ -15,12 +15,20 @@ import {
   ShieldCheck,
   HardDrive,
   Flame,
-  Plus
+  Plus,
+  Filter,
+  X
 } from 'lucide-react';
 import { Workout, WorkoutExercise } from '@/types';
 import { getWorkoutHistory, deleteWorkoutFromHistory, saveActiveWorkout } from '@/lib/storage';
 import { BottomNav } from '@/components/layout/BottomNav';
 import { formatDate, formatDuration } from '@/lib/utils/cn';
+import {
+  groupWorkoutsByDate,
+  filterWorkoutsBySpecificDate,
+  formatLocalDateLabel,
+} from '@/lib/history/dateGrouping';
+import { HistoryCalendarModal } from '@/components/history/HistoryCalendarModal';
 
 export default function HistoryPage() {
   const router = useRouter();
@@ -30,6 +38,8 @@ export default function HistoryPage() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [expandedWorkoutId, setExpandedWorkoutId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [selectedDateKey, setSelectedDateKey] = useState<string | null>(null);
+  const [showCalendarModal, setShowCalendarModal] = useState<boolean>(false);
 
   const fetchHistory = async () => {
     setIsLoading(true);
@@ -111,6 +121,132 @@ export default function HistoryPage() {
     }, 0);
   };
 
+  const renderWorkoutCard = (workout: Workout) => {
+    const isExpanded = expandedWorkoutId === workout.id;
+    const volume = getWorkoutVolume(workout);
+    const totalSets = workout.exercises.reduce((sum, ex) => sum + ex.sets.length, 0);
+
+    return (
+      <div
+        key={workout.id}
+        className="rounded-3xl bg-zinc-900/90 border border-zinc-800 overflow-hidden shadow-lg transition"
+      >
+        {/* Workout Card Header */}
+        <div
+          onClick={() => setExpandedWorkoutId(isExpanded ? null : workout.id)}
+          className="p-4 cursor-pointer hover:bg-zinc-850 transition"
+        >
+          <div className="flex items-start justify-between">
+            <div>
+              <span className="text-[10px] font-bold uppercase tracking-wider text-lime-400 block mb-0.5">
+                {formatDate(workout.startedAt)}
+              </span>
+              <h2 className="text-base font-extrabold text-white">{workout.title}</h2>
+            </div>
+            <div className="flex items-center gap-1">
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleDelete(workout.id, workout.title);
+                }}
+                disabled={deletingId === workout.id}
+                className="p-1.5 rounded-lg text-zinc-500 hover:text-rose-400 hover:bg-zinc-800 transition"
+                title="Delete workout"
+              >
+                <Trash2 className="h-4 w-4" />
+              </button>
+              <button className="p-1.5 rounded-lg text-zinc-400">
+                {isExpanded ? (
+                  <ChevronUp className="h-4 w-4 text-lime-400" />
+                ) : (
+                  <ChevronDown className="h-4 w-4" />
+                )}
+              </button>
+            </div>
+          </div>
+
+          {/* Summary Metrics Pill Bar */}
+          <div className="flex items-center gap-3 mt-3 text-xs text-zinc-300">
+            <span className="flex items-center gap-1">
+              <Clock className="h-3.5 w-3.5 text-lime-400" />
+              {getDurationText(workout)}
+            </span>
+            <span>•</span>
+            <span className="flex items-center gap-1">
+              <Flame className="h-3.5 w-3.5 text-lime-400" />
+              {volume.toLocaleString()} kg
+            </span>
+            <span>•</span>
+            <span>{workout.exercises.length} exercises</span>
+            <span>•</span>
+            <span>{totalSets} sets</span>
+          </div>
+
+          {/* Notes if provided */}
+          {workout.notes && (
+            <p className="text-xs text-zinc-400 italic mt-2 bg-zinc-950/60 p-2 rounded-xl border border-zinc-850">
+              “{workout.notes}”
+            </p>
+          )}
+        </div>
+
+        {/* Collapsible Details: Sets Breakdown */}
+        {isExpanded && (
+          <div className="border-t border-zinc-800 bg-zinc-950/80 p-4 space-y-3 animate-in fade-in">
+            <div className="space-y-3">
+              {workout.exercises.map((exercise, idx) => (
+                <div
+                  key={exercise.id || idx}
+                  className="p-3 rounded-2xl bg-zinc-900 border border-zinc-800/80 space-y-2"
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-xs text-white">
+                      {exercise.exerciseName}
+                    </span>
+                    <span className="text-[10px] text-zinc-400 font-mono">
+                      {exercise.sets.length} {exercise.sets.length === 1 ? 'set' : 'sets'}
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
+                    {exercise.sets.map((s, sIdx) => (
+                      <div
+                        key={s.id || sIdx}
+                        className="px-2 py-1.5 rounded-lg bg-zinc-950 border border-zinc-850 text-center"
+                      >
+                        <div className="flex items-center justify-center gap-1 text-[10px] text-zinc-400">
+                          <span>Set {s.setNumber || sIdx + 1}</span>
+                          {s.durationSeconds ? (
+                            <span className="font-mono text-amber-400">({s.durationSeconds}s)</span>
+                          ) : null}
+                        </div>
+                        <span className="font-extrabold text-xs text-lime-400">
+                          {s.weight} {s.unit || 'kg'}{' '}
+                          <span className="text-zinc-300 font-normal">× {s.reps}</span>
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Action: Repeat Workout */}
+            <div className="pt-2">
+              <button
+                onClick={() => handleRepeat(workout)}
+                className="w-full py-2.5 rounded-xl bg-lime-400 hover:bg-lime-300 text-black font-extrabold text-xs flex items-center justify-center gap-1.5 shadow-[0_0_15px_rgba(163,230,53,0.25)] transition"
+              >
+                <RotateCcw className="h-3.5 w-3.5" />
+                Repeat This Workout
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  };
+
   return (
     <div className="space-y-4 pb-8">
       {/* Header */}
@@ -122,15 +258,49 @@ export default function HistoryPage() {
           <h1 className="text-2xl font-black text-white tracking-tight">Workout History</h1>
         </div>
 
-        <button
-          onClick={fetchHistory}
-          disabled={isLoading}
-          className="p-2.5 rounded-xl bg-zinc-900 border border-zinc-800 hover:border-zinc-700 text-zinc-300 hover:text-white transition active:scale-95 disabled:opacity-50"
-          title="Refresh history"
-        >
-          <RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin text-lime-400' : ''}`} />
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setShowCalendarModal(true)}
+            className={`p-2.5 rounded-xl border transition flex items-center gap-1.5 cursor-pointer ${
+              selectedDateKey
+                ? 'bg-lime-400 text-black border-lime-400 font-extrabold shadow-[0_0_12px_rgba(163,230,53,0.3)]'
+                : 'bg-zinc-900 border-zinc-800 text-zinc-300 hover:text-white hover:border-zinc-700'
+            }`}
+            title="Filter by calendar date"
+          >
+            <Calendar className="h-4 w-4" />
+            {selectedDateKey && <span className="text-[11px] font-mono">{selectedDateKey}</span>}
+          </button>
+
+          <button
+            onClick={fetchHistory}
+            disabled={isLoading}
+            className="p-2.5 rounded-xl bg-zinc-900 border border-zinc-800 hover:border-zinc-700 text-zinc-300 hover:text-white transition active:scale-95 disabled:opacity-50 cursor-pointer"
+            title="Refresh history"
+          >
+            <RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin text-lime-400' : ''}`} />
+          </button>
+        </div>
       </div>
+
+      {/* Calendar Filter Indicator Bar if active */}
+      {selectedDateKey && (
+        <div className="p-3 rounded-2xl bg-zinc-900 border border-lime-500/40 flex items-center justify-between text-xs animate-in fade-in">
+          <div className="flex items-center gap-2">
+            <Calendar className="h-4 w-4 text-lime-400" />
+            <span className="text-zinc-200">
+              Showing date: <strong className="text-white">{formatLocalDateLabel(selectedDateKey)}</strong>
+            </span>
+          </div>
+          <button
+            onClick={() => setSelectedDateKey(null)}
+            className="px-2.5 py-1 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-white text-[11px] font-bold flex items-center gap-1 transition"
+          >
+            <X className="h-3 w-3" />
+            <span>Show Today & Yesterday</span>
+          </button>
+        </div>
+      )}
 
       {/* Source & Sync indicator banner */}
       <div className="flex items-center justify-between p-3 rounded-2xl bg-zinc-900/60 border border-zinc-800 text-xs">
@@ -179,7 +349,7 @@ export default function HistoryPage() {
         </div>
       )}
 
-      {/* Empty State */}
+      {/* Empty State when no workouts exist at all */}
       {!isLoading && workouts.length === 0 && (
         <div className="py-16 text-center rounded-3xl bg-zinc-900/40 border border-dashed border-zinc-800 p-6 space-y-4">
           <div className="w-14 h-14 rounded-2xl bg-zinc-900 text-lime-400 mx-auto flex items-center justify-center border border-zinc-800 shadow-lg">
@@ -200,132 +370,114 @@ export default function HistoryPage() {
         </div>
       )}
 
-      {/* Workout List */}
-      {!isLoading && workouts.length > 0 && (
+      {/* VIEW A: SPECIFIC CALENDAR DATE FILTER ACTIVE */}
+      {!isLoading && workouts.length > 0 && selectedDateKey && (
         <div className="space-y-3">
-          {workouts.map((workout) => {
-            const isExpanded = expandedWorkoutId === workout.id;
-            const volume = getWorkoutVolume(workout);
-            const totalSets = workout.exercises.reduce((sum, ex) => sum + ex.sets.length, 0);
+          {(() => {
+            const filtered = filterWorkoutsBySpecificDate(workouts, selectedDateKey);
+            if (filtered.length === 0) {
+              return (
+                <div className="py-12 text-center rounded-3xl bg-zinc-900/40 border border-dashed border-zinc-800 p-6 space-y-2">
+                  <Calendar className="h-8 w-8 text-zinc-600 mx-auto" />
+                  <h3 className="font-bold text-white text-sm">No workouts logged on this date.</h3>
+                  <p className="text-xs text-zinc-400">
+                    You did not record any training sessions on {formatLocalDateLabel(selectedDateKey)}.
+                  </p>
+                  <button
+                    onClick={() => setSelectedDateKey(null)}
+                    className="mt-2 text-xs font-bold text-lime-400 hover:underline"
+                  >
+                    Return to Today & Yesterday
+                  </button>
+                </div>
+              );
+            }
+            return filtered.map((workout) => renderWorkoutCard(workout));
+          })()}
+        </div>
+      )}
+
+      {/* VIEW B: DEFAULT TODAY AND YESTERDAY VIEW */}
+      {!isLoading && workouts.length > 0 && !selectedDateKey && (
+        <div className="space-y-6">
+          {(() => {
+            const grouped = groupWorkoutsByDate(workouts);
 
             return (
-              <div
-                key={workout.id}
-                className="rounded-3xl bg-zinc-900/90 border border-zinc-800 overflow-hidden shadow-lg transition"
-              >
-                {/* Workout Card Header */}
-                <div
-                  onClick={() => setExpandedWorkoutId(isExpanded ? null : workout.id)}
-                  className="p-4 cursor-pointer hover:bg-zinc-850 transition"
-                >
-                  <div className="flex items-start justify-between">
-                    <div>
-                      <span className="text-[10px] font-bold uppercase tracking-wider text-lime-400 block mb-0.5">
-                        {formatDate(workout.startedAt)}
-                      </span>
-                      <h2 className="text-base font-extrabold text-white">{workout.title}</h2>
-                    </div>
-                    <div className="flex items-center gap-1">
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleDelete(workout.id, workout.title);
-                        }}
-                        disabled={deletingId === workout.id}
-                        className="p-1.5 rounded-lg text-zinc-500 hover:text-rose-400 hover:bg-zinc-800 transition"
-                        title="Delete workout"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </button>
-                      <button className="p-1.5 rounded-lg text-zinc-400">
-                        {isExpanded ? (
-                          <ChevronUp className="h-4 w-4 text-lime-400" />
-                        ) : (
-                          <ChevronDown className="h-4 w-4" />
-                        )}
-                      </button>
-                    </div>
+              <>
+                {/* Section: Today */}
+                <div className="space-y-2.5">
+                  <div className="flex items-center justify-between px-1">
+                    <h2 className="text-xs font-black uppercase tracking-wider text-lime-400 flex items-center gap-1.5">
+                      <span className="w-2 h-2 rounded-full bg-lime-400 inline-block animate-pulse" />
+                      Today
+                    </h2>
+                    <span className="text-[11px] font-mono text-zinc-500">
+                      {grouped.today.length} {grouped.today.length === 1 ? 'workout' : 'workouts'}
+                    </span>
                   </div>
 
-                  {/* Summary Metrics Pill Bar */}
-                  <div className="flex items-center gap-3 mt-3 text-xs text-zinc-300">
-                    <span className="flex items-center gap-1">
-                      <Clock className="h-3.5 w-3.5 text-lime-400" />
-                      {getDurationText(workout)}
-                    </span>
-                    <span>•</span>
-                    <span className="flex items-center gap-1">
-                      <Flame className="h-3.5 w-3.5 text-lime-400" />
-                      {volume.toLocaleString()} kg
-                    </span>
-                    <span>•</span>
-                    <span>{workout.exercises.length} exercises</span>
-                    <span>•</span>
-                    <span>{totalSets} sets</span>
-                  </div>
-
-                  {/* Notes if provided */}
-                  {workout.notes && (
-                    <p className="text-xs text-zinc-400 italic mt-2 bg-zinc-950/60 p-2 rounded-xl border border-zinc-850">
-                      “{workout.notes}”
-                    </p>
+                  {grouped.today.length > 0 ? (
+                    <div className="space-y-3">
+                      {grouped.today.map((w) => renderWorkoutCard(w))}
+                    </div>
+                  ) : (
+                    <div className="p-4 rounded-2xl bg-zinc-900/30 border border-zinc-850 text-center text-xs text-zinc-400">
+                      No workouts logged today.
+                    </div>
                   )}
                 </div>
 
-                {/* Collapsible Details: Sets Breakdown */}
-                {isExpanded && (
-                  <div className="border-t border-zinc-800 bg-zinc-950/80 p-4 space-y-3 animate-in fade-in">
+                {/* Section: Yesterday */}
+                <div className="space-y-2.5 pt-1">
+                  <div className="flex items-center justify-between px-1">
+                    <h2 className="text-xs font-black uppercase tracking-wider text-zinc-400">
+                      Yesterday
+                    </h2>
+                    <span className="text-[11px] font-mono text-zinc-500">
+                      {grouped.yesterday.length} {grouped.yesterday.length === 1 ? 'workout' : 'workouts'}
+                    </span>
+                  </div>
+
+                  {grouped.yesterday.length > 0 ? (
                     <div className="space-y-3">
-                      {workout.exercises.map((exercise, idx) => (
-                        <div
-                          key={exercise.id || idx}
-                          className="p-3 rounded-2xl bg-zinc-900 border border-zinc-800/80 space-y-2"
-                        >
-                          <div className="flex items-center justify-between">
-                            <span className="font-bold text-xs text-white">
-                              {exercise.exerciseName}
-                            </span>
-                            <span className="text-[10px] text-zinc-400 font-mono">
-                              {exercise.sets.length} {exercise.sets.length === 1 ? 'set' : 'sets'}
-                            </span>
-                          </div>
-
-                          <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
-                            {exercise.sets.map((s, sIdx) => (
-                              <div
-                                key={s.id || sIdx}
-                                className="px-2 py-1.5 rounded-lg bg-zinc-950 border border-zinc-850 text-center"
-                              >
-                                <span className="text-[10px] text-zinc-400 block">
-                                  Set {s.setNumber || sIdx + 1}
-                                </span>
-                                <span className="font-extrabold text-xs text-lime-400">
-                                  {s.weight} {s.unit || 'kg'}{' '}
-                                  <span className="text-zinc-300 font-normal">× {s.reps}</span>
-                                </span>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      ))}
+                      {grouped.yesterday.map((w) => renderWorkoutCard(w))}
                     </div>
-
-                    {/* Action: Repeat Workout */}
-                    <div className="pt-2">
-                      <button
-                        onClick={() => handleRepeat(workout)}
-                        className="w-full py-2.5 rounded-xl bg-lime-400 hover:bg-lime-300 text-black font-extrabold text-xs flex items-center justify-center gap-1.5 shadow-[0_0_15px_rgba(163,230,53,0.25)] transition"
-                      >
-                        <RotateCcw className="h-3.5 w-3.5" />
-                        Repeat This Workout
-                      </button>
+                  ) : (
+                    <div className="p-4 rounded-2xl bg-zinc-900/30 border border-zinc-850 text-center text-xs text-zinc-400">
+                      No workouts logged yesterday.
                     </div>
+                  )}
+                </div>
+
+                {/* Section: Older Workouts Notice */}
+                {grouped.older.length > 0 && (
+                  <div className="p-4 rounded-2xl bg-zinc-900/60 border border-zinc-800 flex items-center justify-between text-xs text-zinc-400">
+                    <span>
+                      {grouped.older.length} earlier training session{grouped.older.length === 1 ? '' : 's'} recorded.
+                    </span>
+                    <button
+                      onClick={() => setShowCalendarModal(true)}
+                      className="font-bold text-lime-400 hover:underline flex items-center gap-1 cursor-pointer"
+                    >
+                      <Calendar className="h-3.5 w-3.5" />
+                      <span>Explore Past Dates</span>
+                    </button>
                   </div>
                 )}
-              </div>
+              </>
             );
-          })}
+          })()}
         </div>
+      )}
+
+      {/* Calendar Picker Modal */}
+      {showCalendarModal && (
+        <HistoryCalendarModal
+          currentSelectedDateKey={selectedDateKey}
+          onSelectDate={setSelectedDateKey}
+          onClose={() => setShowCalendarModal(false)}
+        />
       )}
 
       {/* Bottom Nav */}
