@@ -106,8 +106,8 @@ export type WorkoutVoiceCommand =
   | {
       type: 'ADD_SET';
       exercise: string;
-      weight: number;
-      reps: number;
+      weight?: number;
+      reps?: number;
       unit: WeightUnit;
       setNumber?: number;
       setCount?: number;
@@ -117,7 +117,7 @@ export type WorkoutVoiceCommand =
   | {
       type: 'ADD_SET_CURRENT';
       weight?: number;
-      reps: number;
+      reps?: number;
       unit: WeightUnit;
       setNumber?: number;
       setCount?: number;

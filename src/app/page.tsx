@@ -690,10 +690,19 @@ export default function WorkoutPage() {
       }
 
       // 3. Check for missing fields or repeated exercise disambiguation
-      if (command.type === 'ADD_SET' || command.type === 'CONFIRM_EXERCISE') {
+      if (
+        command.type === 'ADD_SET' ||
+        command.type === 'CONFIRM_EXERCISE' ||
+        command.type === 'ADD_SET_CURRENT'
+      ) {
         const clarificationNeeded = evaluateClarificationNeed({
           rawTranscript: finalTranscript,
-          detectedExercise: command.type === 'ADD_SET' ? command.exercise : undefined,
+          detectedExercise:
+            command.type === 'ADD_SET'
+              ? command.exercise
+              : command.type === 'ADD_SET_CURRENT'
+              ? currentEx?.exerciseName
+              : undefined,
           detectedUnknownExercise: command.type === 'CONFIRM_EXERCISE' ? command.spokenPhrase : undefined,
           parsedWeight: 'weight' in command ? command.weight : undefined,
           parsedReps: 'reps' in command ? command.reps : undefined,
@@ -804,6 +813,17 @@ export default function WorkoutPage() {
         }
 
         case 'ADD_SET': {
+          if (command.weight === undefined || command.reps === undefined) {
+            setSaveStatus({
+              type: 'info',
+              message: `Please specify ${command.weight === undefined ? 'weight' : 'reps'} to log this set.`,
+            });
+            break;
+          }
+
+          const setWeight = command.weight;
+          const setReps = command.reps;
+
           // Find or create exercise
           const existingIdx = currentWorkout.exercises.findIndex(
             (e) => e.exerciseName.toLowerCase() === command.exercise.toLowerCase()
@@ -825,8 +845,8 @@ export default function WorkoutPage() {
               s.setNumber === command.setNumber
                 ? {
                     ...s,
-                    weight: command.weight,
-                    reps: command.reps,
+                    weight: setWeight,
+                    reps: setReps,
                     unit: command.unit,
                     isCompleted: true,
                     durationSeconds: currentDuration > 0 ? currentDuration : s.durationSeconds,
@@ -838,7 +858,7 @@ export default function WorkoutPage() {
 
             setSaveStatus({
               type: 'success',
-              message: `Updated Set #${command.setNumber} on ${command.exercise}: ${command.weight} ${command.unit} × ${command.reps} reps`,
+              message: `Updated Set #${command.setNumber} on ${command.exercise}: ${setWeight} ${command.unit} × ${setReps} reps`,
             });
           } else {
             // Append set(s)
@@ -853,8 +873,8 @@ export default function WorkoutPage() {
               {
                 id: typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `s_${Date.now()}_0`,
                 setNumber: targetSetNum,
-                weight: command.weight,
-                reps: command.reps,
+                weight: setWeight,
+                reps: setReps,
                 unit: command.unit,
                 isCompleted: true,
                 durationSeconds: currentDuration > 0 ? currentDuration : undefined,
@@ -910,6 +930,16 @@ export default function WorkoutPage() {
         }
 
         case 'ADD_SET_CURRENT': {
+          if (command.reps === undefined) {
+            setSaveStatus({
+              type: 'info',
+              message: 'Please specify repetitions to log this set.',
+            });
+            break;
+          }
+
+          const currentReps = command.reps;
+
           // Add set to currently selected exercise
           let targetEx = currentWorkout.exercises.find((e) => e.id === selectedExerciseId);
           if (!targetEx && currentWorkout.exercises.length > 0) {
@@ -922,7 +952,7 @@ export default function WorkoutPage() {
               type: 'AMBIGUOUS',
               rawTranscript: command.rawTranscript,
               reason: 'No active exercise selected to attach this set to',
-              suggestedReps: command.reps,
+              suggestedReps: currentReps,
               suggestedWeight: command.weight,
               suggestedUnit: command.unit,
             });
@@ -945,7 +975,7 @@ export default function WorkoutPage() {
                 ? {
                     ...s,
                     weight: finalWeight,
-                    reps: command.reps,
+                    reps: currentReps,
                     unit: command.unit || preferredUnit,
                     isCompleted: true,
                     durationSeconds: currentDuration > 0 ? currentDuration : s.durationSeconds,
@@ -966,7 +996,7 @@ export default function WorkoutPage() {
 
             setSaveStatus({
               type: 'success',
-              message: `Updated Set #${command.setNumber} on ${targetEx.exerciseName}: ${finalWeight} ${command.unit || preferredUnit} × ${command.reps} reps`,
+              message: `Updated Set #${command.setNumber} on ${targetEx.exerciseName}: ${finalWeight} ${command.unit || preferredUnit} × ${currentReps} reps`,
             });
           } else {
             const targetSetNum =
@@ -977,7 +1007,7 @@ export default function WorkoutPage() {
                 id: typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `s_${Date.now()}_0`,
                 setNumber: targetSetNum,
                 weight: finalWeight,
-                reps: command.reps,
+                reps: currentReps,
                 unit: command.unit || preferredUnit,
                 isCompleted: true,
                 durationSeconds: currentDuration > 0 ? currentDuration : undefined,
@@ -990,7 +1020,7 @@ export default function WorkoutPage() {
                   id: typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `s_${Date.now()}_${i}`,
                   setNumber: targetSetNum + i,
                   weight: finalWeight,
-                  reps: command.reps,
+                  reps: currentReps,
                   unit: command.unit || preferredUnit,
                   isCompleted: true,
                 });

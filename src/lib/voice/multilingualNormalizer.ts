@@ -101,15 +101,15 @@ export function resolveMultilingualPhrase(
     return MULTILINGUAL_EXERCISE_SEED[normalized];
   }
 
-  // 3. Substring search for partial matches
+  // 3. Phrase search for exact or phrase-contained matches (do not match partial sub-words backwards)
   for (const [key, canonical] of Object.entries(customAliases)) {
-    if (normalized === key || normalized.includes(key) || key.includes(normalized)) {
+    if (normalized === key || normalized.includes(key)) {
       return canonical;
     }
   }
 
   for (const [key, canonical] of Object.entries(MULTILINGUAL_EXERCISE_SEED)) {
-    if (normalized === key || normalized.includes(key) || key.includes(normalized)) {
+    if (normalized === key || normalized.includes(key)) {
       return canonical;
     }
   }

@@ -183,6 +183,24 @@ export function evaluateClarificationNeed(input: ParseCandidateInput): Clarifica
     };
   }
 
+  // 5. Missing both repetitions and weight on a set command
+  if (targetExerciseName && parsedWeight === undefined && parsedReps === undefined && !isSameWeight && (parsedSetNumber !== undefined || isNextSet)) {
+    return {
+      step: 'ASK_REPS',
+      exerciseName: targetExerciseName,
+      setNumber: parsedSetNumber,
+      unit,
+      originalTranscript: rawTranscript,
+      questionPrompt: `How many reps did you complete on ${targetExerciseName}?`,
+      options: [
+        { label: '8 reps', action: 'SET_VALUE', value: 8 },
+        { label: '10 reps', action: 'SET_VALUE', value: 10 },
+        { label: '12 reps', action: 'SET_VALUE', value: 12 },
+        { label: 'Other', action: 'CORRECT' },
+      ],
+    };
+  }
+
   return null;
 }
 
