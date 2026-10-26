@@ -456,11 +456,12 @@ export default function WorkoutPage() {
       },
       currentWorkout: Workout
     ) => {
-      const existingIdx = currentWorkout.exercises.findIndex(
+      const liveWorkout = activeWorkoutRef.current || currentWorkout;
+      const existingIdx = liveWorkout.exercises.findIndex(
         (e) => e.exerciseName.toLowerCase() === command.exercise.toLowerCase()
       );
 
-      let updatedExercises = [...currentWorkout.exercises];
+      let updatedExercises = [...liveWorkout.exercises];
       let targetExerciseId: string;
       let currentDuration = setTimerSeconds;
 
@@ -542,7 +543,7 @@ export default function WorkoutPage() {
         });
       }
 
-      updateWorkout({ ...currentWorkout, exercises: updatedExercises });
+      updateWorkout({ ...liveWorkout, exercises: updatedExercises });
       updateSelectedExerciseId(targetExerciseId);
       setShowRestTimer(true);
       playSoundChime();
@@ -692,7 +693,7 @@ export default function WorkoutPage() {
 
         if (completedCommand) {
           setClarificationState(null);
-          let currentW = activeWorkout;
+          let currentW = activeWorkoutRef.current || activeWorkout;
           if (!currentW) currentW = handleStartWorkout('Voice Workout');
           executeDirectSetCommand(completedCommand, currentW);
         } else if (nextState) {
@@ -735,8 +736,30 @@ export default function WorkoutPage() {
       console.log('Voice Command Received:', command);
 
       // 1. Process active clarification response if waiting for athlete input
-      // If the user speaks an explicit new command or explicit exercise, dismiss stale clarification
       if (clarificationState) {
+        // If clarification was waiting on set number disambiguation (e.g. "Is this set 2 for Bench Press?")
+        // and the user repeated the command or spoke the set values:
+        if (
+          clarificationState.step === 'ASK_SET_NUMBER' &&
+          ((command.type === 'ADD_SET' && command.exercise.toLowerCase() === clarificationState.exerciseName?.toLowerCase()) ||
+            command.type === 'ADD_SET_CURRENT')
+        ) {
+          const targetSetNum = clarificationState.setNumber || 2;
+          const completedCmd = {
+            type: 'ADD_SET' as const,
+            exercise: clarificationState.exerciseName || ('exercise' in command ? command.exercise : 'Exercise'),
+            weight: ('weight' in command && command.weight !== undefined) ? command.weight : (clarificationState.weight ?? 0),
+            reps: ('reps' in command && command.reps !== undefined) ? command.reps : (clarificationState.reps ?? 10),
+            unit: ('unit' in command && command.unit) ? command.unit : (clarificationState.unit || preferredUnit),
+            setNumber: targetSetNum,
+            rawTranscript: finalTranscript,
+          };
+          setClarificationState(null);
+          executeDirectSetCommand(completedCmd, currentWorkout);
+          return;
+        }
+
+        // If the user speaks an explicit new command or explicit exercise, dismiss stale clarification
         const isExplicitNewAction =
           (command.type === 'ADD_SET' && Boolean(command.exercise)) ||
           command.type === 'SELECT_EXERCISE' ||
@@ -976,15 +999,16 @@ export default function WorkoutPage() {
             break;
           }
 
+          const liveWorkout = activeWorkoutRef.current || currentWorkout;
           const setWeight = command.weight;
           const setReps = command.reps;
 
           // Find or create exercise
-          const existingIdx = currentWorkout.exercises.findIndex(
+          const existingIdx = liveWorkout.exercises.findIndex(
             (e) => e.exerciseName.toLowerCase() === command.exercise.toLowerCase()
           );
 
-          let updatedExercises = [...currentWorkout.exercises];
+          let updatedExercises = [...liveWorkout.exercises];
           let targetExerciseId: string;
           const currentDuration = setTimerSeconds;
           setSetTimerSeconds(0);
@@ -1073,7 +1097,7 @@ export default function WorkoutPage() {
           }
 
           const updated = {
-            ...currentWorkout,
+            ...liveWorkout,
             exercises: updatedExercises,
           };
           updateWorkout(updated);
@@ -1093,13 +1117,14 @@ export default function WorkoutPage() {
             break;
           }
 
+          const liveWorkout = activeWorkoutRef.current || currentWorkout;
           const currentReps = command.reps;
 
           // Add set to currently selected exercise
           const currentSelectedId = selectedExerciseIdRef.current || selectedExerciseId;
-          let targetEx = currentWorkout.exercises.find((e) => e.id === currentSelectedId);
-          if (!targetEx && currentWorkout.exercises.length > 0) {
-            targetEx = currentWorkout.exercises[currentWorkout.exercises.length - 1];
+          let targetEx = liveWorkout.exercises.find((e) => e.id === currentSelectedId);
+          if (!targetEx && liveWorkout.exercises.length > 0) {
+            targetEx = liveWorkout.exercises[liveWorkout.exercises.length - 1];
           }
 
           if (!targetEx) {
@@ -1139,11 +1164,11 @@ export default function WorkoutPage() {
                 : s
             );
 
-            const updatedExercises = currentWorkout.exercises.map((e) =>
+            const updatedExercises = liveWorkout.exercises.map((e) =>
               e.id === targetId ? { ...e, sets: updatedSets } : e
             );
 
-            const updated = { ...currentWorkout, exercises: updatedExercises };
+            const updated = { ...liveWorkout, exercises: updatedExercises };
             updateWorkout(updated);
             updateSelectedExerciseId(targetId);
             setShowRestTimer(true);
@@ -1183,12 +1208,12 @@ export default function WorkoutPage() {
               }
             }
 
-            const updatedExercises = currentWorkout.exercises.map((e) =>
+            const updatedExercises = liveWorkout.exercises.map((e) =>
               e.id === targetId ? { ...e, sets: [...e.sets, ...newSetsToAdd] } : e
             );
 
             const updated = {
-              ...currentWorkout,
+              ...liveWorkout,
               exercises: updatedExercises,
             };
             updateWorkout(updated);
@@ -1628,7 +1653,13 @@ export default function WorkoutPage() {
               </button>
 
               <button
-                onClick={() => handleStartWorkout('Full Body Workout')}
+                onClick={() => {
+                  handleStartWorkout('Full Body Workout');
+                  if (!isListeningDesired) {
+                    prewarmGymNoiseReduction().catch(() => {});
+                    startContinuousListening();
+                  }
+                }}
                 className="w-full py-3 rounded-2xl bg-zinc-900 hover:bg-zinc-800 text-zinc-300 border border-zinc-800 text-xs font-bold flex items-center justify-center gap-1.5 transition cursor-pointer"
               >
                 <Play className="h-4 w-4" />
@@ -1673,7 +1704,13 @@ export default function WorkoutPage() {
               ].map((split) => (
                 <button
                   key={split.name}
-                  onClick={() => handleStartWorkout(split.name)}
+                  onClick={() => {
+                    handleStartWorkout(split.name);
+                    if (!isListeningDesired) {
+                      prewarmGymNoiseReduction().catch(() => {});
+                      startContinuousListening();
+                    }
+                  }}
                   className="p-3.5 rounded-2xl bg-zinc-900 border border-zinc-800 hover:border-lime-400/50 text-left transition group active:scale-95 cursor-pointer"
                 >
                   <div className="flex items-center justify-between mb-1">
@@ -1869,7 +1906,21 @@ export default function WorkoutPage() {
             </div>
 
             {/* Real-time speech stream */}
-            {isListeningDesired && (
+            {!isListeningDesired ? (
+              <div className="p-3 rounded-2xl bg-amber-950/30 border border-amber-500/30 flex items-center justify-between text-xs text-amber-200">
+                <div className="flex items-center gap-2">
+                  <MicOff className="h-4 w-4 text-amber-400 shrink-0" />
+                  <span>Microphone is paused. Tap <strong>START LISTENING</strong> to log sets by voice.</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={toggleContinuousListening}
+                  className="px-3 py-1.5 rounded-xl bg-lime-400 text-black font-black text-xs hover:bg-lime-300 transition cursor-pointer shrink-0 ml-2 shadow-[0_0_10px_rgba(163,230,53,0.3)]"
+                >
+                  Turn On
+                </button>
+              </div>
+            ) : (
               <div className="p-2.5 rounded-xl bg-zinc-950/60 border border-zinc-850/80">
                 <p className="text-xs text-zinc-300 font-mono">
                   {interimTranscript ? (

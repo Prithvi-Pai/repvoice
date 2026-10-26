@@ -38,6 +38,7 @@ export function useContinuousWorkoutSpeech({
   const restartTimerRef = useRef<NodeJS.Timeout | null>(null);
   const consecutiveErrorsRef = useRef<number>(0);
   const processedUtterancesRef = useRef<Set<string>>(new Set());
+  const lastInterimTranscriptRef = useRef<string>('');
 
   // Callbacks in refs to prevent unnecessary re-binds or cancellations
   const onFinalUtteranceRef = useRef(onFinalUtterance);
@@ -153,6 +154,7 @@ export function useContinuousWorkoutSpeech({
               if (firstItem) processedUtterancesRef.current.delete(firstItem);
             }
 
+            lastInterimTranscriptRef.current = '';
             setLastFinalTranscript(transcriptText);
             setInterimTranscript('');
             setStatus('processing');
@@ -177,6 +179,7 @@ export function useContinuousWorkoutSpeech({
       }
 
       const trimmedInterim = interim.trim();
+      lastInterimTranscriptRef.current = trimmedInterim;
       setInterimTranscript(trimmedInterim);
       if (trimmedInterim && onInterimUtteranceRef.current) {
         onInterimUtteranceRef.current(trimmedInterim);
@@ -195,6 +198,16 @@ export function useContinuousWorkoutSpeech({
         // Natural silence in the gym: do not stop continuous listening
       } else if (event.error === 'aborted') {
         isStartingOrActiveRef.current = false;
+      } else if (event.error === 'audio-capture') {
+        isStartingOrActiveRef.current = false;
+        consecutiveErrorsRef.current += 1;
+        if (consecutiveErrorsRef.current > 4) {
+          setStatus('error');
+          setErrorMessage('Microphone capture error. Please ensure no other application is using your microphone.');
+        } else {
+          // Retry after a short backoff
+          restartTimerRef.current = setTimeout(attemptRestart, 500);
+        }
       } else {
         consecutiveErrorsRef.current += 1;
         if (consecutiveErrorsRef.current > 4) {
@@ -206,6 +219,23 @@ export function useContinuousWorkoutSpeech({
 
     recognition.onend = () => {
       isStartingOrActiveRef.current = false;
+
+      // If there was an unfinalized interim transcript that has command content, dispatch it before restart
+      const pendingInterim = lastInterimTranscriptRef.current.trim();
+      if (pendingInterim) {
+        lastInterimTranscriptRef.current = '';
+        const dedupeKey = `${pendingInterim.toLowerCase()}_${Math.floor(Date.now() / 2500)}`;
+        if (!processedUtterancesRef.current.has(dedupeKey)) {
+          processedUtterancesRef.current.add(dedupeKey);
+          setLastFinalTranscript(pendingInterim);
+          setInterimTranscript('');
+          try {
+            onFinalUtteranceRef.current(pendingInterim);
+          } catch (dispatchErr) {
+            console.error('Error dispatching pending utterance on speech end:', dispatchErr);
+          }
+        }
+      }
 
       // If user still wants listening active, auto-restart seamlessly
       if (isListeningDesiredRef.current) {

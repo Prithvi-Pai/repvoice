@@ -54,9 +54,19 @@ export async function prewarmGymNoiseReduction(): Promise<AudioEnhancementState>
       },
     });
 
-    activeMediaStream = stream;
     const track = stream.getAudioTracks()[0];
     const settings = track?.getSettings() || {};
+
+    // Immediately release stream tracks so hardware microphone is not locked exclusively.
+    // Web Speech API (webkitSpeechRecognition) needs exclusive access to the microphone on Windows.
+    stream.getTracks().forEach((t) => {
+      try {
+        t.stop();
+      } catch {
+        // ignore
+      }
+    });
+    activeMediaStream = null;
 
     return {
       isSupported: true,
