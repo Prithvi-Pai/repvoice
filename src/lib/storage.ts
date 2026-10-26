@@ -32,7 +32,14 @@ export function getActiveWorkout(): Workout | null {
   if (typeof window === 'undefined') return null;
   try {
     const raw = localStorage.getItem(LOCAL_STORAGE_ACTIVE_WORKOUT);
-    return raw ? JSON.parse(raw) : null;
+    if (!raw) return null;
+    const parsed: Workout = JSON.parse(raw);
+    if (parsed && parsed.completedAt) {
+      // Completed workout must never be treated as active in-progress
+      localStorage.removeItem(LOCAL_STORAGE_ACTIVE_WORKOUT);
+      return null;
+    }
+    return parsed;
   } catch {
     return null;
   }

@@ -56,7 +56,6 @@ import {
   toTitleCase,
 } from '@/lib/exercises/exerciseStore';
 import { VoiceClarificationModal } from '@/components/workout/VoiceClarificationModal';
-import { SetTimerBadge } from '@/components/workout/SetTimerBadge';
 import {
   ActiveSetTimerState,
   startSetTimer,
@@ -78,6 +77,11 @@ import { getLocalDateKey } from '@/lib/history/dateGrouping';
 export default function WorkoutPage() {
   const [activeWorkout, setActiveWorkout] = useState<Workout | null>(null);
   const [selectedExerciseId, setSelectedExerciseId] = useState<string | null>(null);
+
+  // Synchronous refs to prevent React state closure staleness in voice callbacks
+  const activeWorkoutRef = useRef<Workout | null>(null);
+  const selectedExerciseIdRef = useRef<string | null>(null);
+
   const [elapsedSeconds, setElapsedSeconds] = useState<number>(0);
   const [setTimerSeconds, setSetTimerSeconds] = useState<number>(0);
   const [showRestTimer, setShowRestTimer] = useState<boolean>(false);
@@ -95,7 +99,12 @@ export default function WorkoutPage() {
   const [userEmail, setUserEmail] = useState<string | null>(null);
   const [preferredUnit, setPreferredUnit] = useState<WeightUnit>('kg');
   const [clarificationState, setClarificationState] = useState<ClarificationState | null>(null);
-  const [activeSetTimer, setActiveSetTimer] = useState<ActiveSetTimerState | null>(null);
+
+  // Independent per-set active timers (keyed by set.id)
+  const [activeSetTimers, setActiveSetTimers] = useState<Record<string, ActiveSetTimerState>>({});
+  const activeSetTimersRef = useRef<Record<string, ActiveSetTimerState>>({});
+  const [, setTimerTick] = useState<number>(0);
+
   const [workoutHistory, setWorkoutHistory] = useState<Workout[]>([]);
   const [dailyRecommendation, setDailyRecommendation] = useState<DailyWorkoutRecommendation | null>(null);
   const [isRecommendationDismissed, setIsRecommendationDismissed] = useState<boolean>(false);
@@ -139,9 +148,12 @@ export default function WorkoutPage() {
 
     const current = getActiveWorkout();
     if (current) {
+      activeWorkoutRef.current = current;
       setActiveWorkout(current);
       if (current.exercises.length > 0) {
-        setSelectedExerciseId(current.exercises[current.exercises.length - 1].id);
+        const lastExId = current.exercises[current.exercises.length - 1].id;
+        selectedExerciseIdRef.current = lastExId;
+        setSelectedExerciseId(lastExId);
       }
       const startMs = new Date(current.startedAt).getTime();
       setElapsedSeconds(Math.max(0, Math.floor((Date.now() - startMs) / 1000)));
@@ -181,10 +193,29 @@ export default function WorkoutPage() {
     };
   }, [activeWorkout]);
 
-  // Sync active workout to local storage on change
+  // Live tick effect for all active inline set timers
+  useEffect(() => {
+    const hasRunning = Object.values(activeSetTimers).some((t) => t.isRunning);
+    if (!hasRunning) return;
+
+    const interval = setInterval(() => {
+      setTimerTick((t) => t + 1);
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [activeSetTimers]);
+
+  // Sync active workout to local storage and synchronous ref
   const updateWorkout = useCallback((updated: Workout | null) => {
+    activeWorkoutRef.current = updated;
     setActiveWorkout(updated);
     saveActiveWorkout(updated);
+  }, []);
+
+  // Update selected exercise ID in both state and synchronous ref
+  const updateSelectedExerciseId = useCallback((id: string | null) => {
+    selectedExerciseIdRef.current = id;
+    setSelectedExerciseId(id);
   }, []);
 
   // Start new workout session
@@ -196,11 +227,16 @@ export default function WorkoutPage() {
       exercises: [],
     };
     updateWorkout(newWorkout);
-    setSelectedExerciseId(null);
+    updateSelectedExerciseId(null);
     setElapsedSeconds(0);
+    setSetTimerSeconds(0);
     setSaveStatus(null);
+    setClarificationState(null);
+    setPendingConfirmation(null);
+    setActiveSetTimers({});
+    activeSetTimersRef.current = {};
     return newWorkout;
-  }, [updateWorkout]);
+  }, [updateWorkout, updateSelectedExerciseId]);
 
   // Accept a daily recommended workout and initialize with suggested exercises
   const handleAcceptRecommendation = useCallback(
@@ -221,7 +257,7 @@ export default function WorkoutPage() {
         };
         updateWorkout(populated);
         if (initialExercises.length > 0) {
-          setSelectedExerciseId(initialExercises[0].id);
+          updateSelectedExerciseId(initialExercises[0].id);
         }
       }
       setSaveStatus({
@@ -256,13 +292,15 @@ export default function WorkoutPage() {
 
   // Get currently selected exercise object and last known weight
   const getActiveExerciseContext = useCallback((): { exercise?: WorkoutExercise; lastWeight: number } => {
-    if (!activeWorkout || activeWorkout.exercises.length === 0) {
+    const currentW = activeWorkoutRef.current || activeWorkout;
+    if (!currentW || currentW.exercises.length === 0) {
       return { lastWeight: 0 };
     }
 
-    let target = activeWorkout.exercises.find((e) => e.id === selectedExerciseId);
+    const currentSelectedId = selectedExerciseIdRef.current || selectedExerciseId;
+    let target = currentW.exercises.find((e) => e.id === currentSelectedId);
     if (!target) {
-      target = activeWorkout.exercises[activeWorkout.exercises.length - 1];
+      target = currentW.exercises[currentW.exercises.length - 1];
     }
 
     const lastSet = target && target.sets.length > 0 ? target.sets[target.sets.length - 1] : undefined;
@@ -299,7 +337,7 @@ export default function WorkoutPage() {
       setCorrectionInput('');
 
       // 4. Ensure active workout session
-      let currentWorkout = activeWorkout || handleStartWorkout('Gym Workout');
+      let currentWorkout = activeWorkoutRef.current || activeWorkout || handleStartWorkout('Gym Workout');
 
       // 5. If selection only (e.g. "Next exercise, chest press")
       if (pending.isSelectionOnly) {
@@ -307,7 +345,7 @@ export default function WorkoutPage() {
           (e) => e.exerciseName.toLowerCase() === cleanName.toLowerCase()
         );
         if (existing) {
-          setSelectedExerciseId(existing.id);
+          updateSelectedExerciseId(existing.id);
         } else {
           const newExId = typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `ex_${Date.now()}`;
           const newEx: WorkoutExercise = {
@@ -316,7 +354,7 @@ export default function WorkoutPage() {
             sets: [],
           };
           updateWorkout({ ...currentWorkout, exercises: [...currentWorkout.exercises, newEx] });
-          setSelectedExerciseId(newExId);
+          updateSelectedExerciseId(newExId);
         }
         playSoundChime();
         setSaveStatus({
@@ -392,7 +430,7 @@ export default function WorkoutPage() {
         exercises: updatedExercises,
       };
       updateWorkout(updated);
-      setSelectedExerciseId(targetExerciseId);
+      updateSelectedExerciseId(targetExerciseId);
       setShowRestTimer(true);
       playSoundChime();
 
@@ -402,7 +440,7 @@ export default function WorkoutPage() {
         message: `Logged ${cleanName}: ${weight} ${pending.unit} × ${reps} reps. Learned alias for "${phrase}"!`,
       });
     },
-    [activeWorkout, setTimerSeconds, handleStartWorkout, updateWorkout, playSoundChime]
+    [activeWorkout, setTimerSeconds, handleStartWorkout, updateWorkout, updateSelectedExerciseId, playSoundChime]
   );
 
   // Execute direct set insertion/update
@@ -426,10 +464,15 @@ export default function WorkoutPage() {
       let targetExerciseId: string;
       let currentDuration = setTimerSeconds;
 
-      if (activeSetTimer && activeSetTimer.isRunning) {
-        const timing = completeSetTimer(activeSetTimer);
+      const runningTimerEntry = Object.entries(activeSetTimersRef.current).find(([, t]) => t.isRunning);
+      if (runningTimerEntry) {
+        const [setId, timer] = runningTimerEntry;
+        const timing = completeSetTimer(timer);
         currentDuration = timing.durationSeconds;
-        setActiveSetTimer(null);
+        const nextTimers = { ...activeSetTimersRef.current };
+        delete nextTimers[setId];
+        activeSetTimersRef.current = nextTimers;
+        setActiveSetTimers(nextTimers);
       }
       setSetTimerSeconds(0);
 
@@ -500,11 +543,61 @@ export default function WorkoutPage() {
       }
 
       updateWorkout({ ...currentWorkout, exercises: updatedExercises });
-      setSelectedExerciseId(targetExerciseId);
+      updateSelectedExerciseId(targetExerciseId);
       setShowRestTimer(true);
       playSoundChime();
     },
-    [activeSetTimer, setTimerSeconds, updateWorkout, playSoundChime]
+    [setTimerSeconds, updateWorkout, updateSelectedExerciseId, playSoundChime]
+  );
+
+  // Toggle inline timer directly on a set row (Feature: Inline Set Timer)
+  const handleToggleInlineTimer = useCallback(
+    (exerciseIndex: number, setIndex: number, setId: string, setNumber: number, forceStart?: boolean) => {
+      const currentWorkout = activeWorkoutRef.current || activeWorkout;
+      if (!currentWorkout) return;
+      const targetEx = currentWorkout.exercises[exerciseIndex];
+      if (!targetEx) return;
+
+      const currentTimer = activeSetTimersRef.current[setId];
+      const isRunning = currentTimer && currentTimer.isRunning;
+
+      if (isRunning && !forceStart) {
+        // Stop timer immediately and preserve duration without marking completed
+        const timing = completeSetTimer(currentTimer);
+        const nextTimers = { ...activeSetTimersRef.current };
+        delete nextTimers[setId];
+        activeSetTimersRef.current = nextTimers;
+        setActiveSetTimers(nextTimers);
+
+        const updatedSets = [...targetEx.sets];
+        updatedSets[setIndex] = {
+          ...updatedSets[setIndex],
+          durationSeconds: timing.durationSeconds,
+          startedAt: timing.startedAt,
+          completedAt: timing.completedAt,
+        };
+        const updatedExercises = [...currentWorkout.exercises];
+        updatedExercises[exerciseIndex] = { ...targetEx, sets: updatedSets };
+        updateWorkout({ ...currentWorkout, exercises: updatedExercises });
+        playSoundChime();
+        setSaveStatus({
+          type: 'info',
+          message: `Set #${setNumber} timer stopped: ${timing.formattedDuration}.`,
+        });
+      } else if (!isRunning) {
+        // Start timer immediately
+        const newTimer = startSetTimer(targetEx.id, setNumber, setId);
+        const nextTimers = { ...activeSetTimersRef.current, [setId]: newTimer };
+        activeSetTimersRef.current = nextTimers;
+        setActiveSetTimers(nextTimers);
+        playSoundChime();
+        setSaveStatus({
+          type: 'info',
+          message: `Timer started for ${targetEx.exerciseName} Set #${setNumber}.`,
+        });
+      }
+    },
+    [activeWorkout, updateWorkout, playSoundChime]
   );
 
   // Undo last logged set
@@ -621,35 +714,10 @@ export default function WorkoutPage() {
   // Continuous Voice Command Dispatcher
   const handleVoiceCommand = useCallback(
     (finalTranscript: string) => {
-      // Ensure workout exists
-      let currentWorkout = activeWorkout;
+      // Ensure workout exists using synchronous ref
+      let currentWorkout = activeWorkoutRef.current || activeWorkout;
       if (!currentWorkout) {
         currentWorkout = handleStartWorkout('Continuous Voice Workout');
-      }
-
-      // 1. Process active clarification response if waiting for athlete input
-      if (clarificationState) {
-        const { nextState, completedCommand } = processClarificationResponse(
-          clarificationState,
-          finalTranscript,
-          preferredUnit
-        );
-
-        if (completedCommand) {
-          setClarificationState(null);
-          executeDirectSetCommand(completedCommand, currentWorkout);
-          return;
-        }
-
-        if (nextState) {
-          setClarificationState(nextState);
-          playSoundChime();
-          setSaveStatus({ type: 'info', message: nextState.questionPrompt });
-          return;
-        }
-
-        setClarificationState(null);
-        return;
       }
 
       const { exercise: currentEx, lastWeight } = getActiveExerciseContext();
@@ -666,16 +734,83 @@ export default function WorkoutPage() {
 
       console.log('Voice Command Received:', command);
 
+      // 1. Process active clarification response if waiting for athlete input
+      // If the user speaks an explicit new command or explicit exercise, dismiss stale clarification
+      if (clarificationState) {
+        const isExplicitNewAction =
+          (command.type === 'ADD_SET' && Boolean(command.exercise)) ||
+          command.type === 'SELECT_EXERCISE' ||
+          command.type === 'FINISH_WORKOUT' ||
+          command.type === 'START_SET' ||
+          command.type === 'UNDO_LAST';
+
+        if (isExplicitNewAction) {
+          setClarificationState(null);
+        } else {
+          const { nextState, completedCommand } = processClarificationResponse(
+            clarificationState,
+            finalTranscript,
+            preferredUnit
+          );
+
+          if (completedCommand) {
+            setClarificationState(null);
+            executeDirectSetCommand(completedCommand, currentWorkout);
+            return;
+          }
+
+          if (nextState) {
+            setClarificationState(nextState);
+            playSoundChime();
+            setSaveStatus({ type: 'info', message: nextState.questionPrompt });
+            return;
+          }
+
+          setClarificationState(null);
+          return;
+        }
+      }
+
       // 2. Control Commands
       if (command.type === 'START_SET') {
-        const targetExId = currentEx?.id || (currentWorkout.exercises.length > 0 ? currentWorkout.exercises[0].id : 'active_ex');
-        const nextSetNumber = currentEx ? currentEx.sets.length + 1 : 1;
-        setActiveSetTimer(startSetTimer(targetExId, nextSetNumber));
-        playSoundChime();
-        setSaveStatus({
-          type: 'info',
-          message: `Set #${nextSetNumber} timer started! Say 'Set done' when completed.`,
-        });
+        const currentW = activeWorkoutRef.current || currentWorkout;
+        if (!currentW || currentW.exercises.length === 0) {
+          setSaveStatus({
+            type: 'info',
+            message: 'No exercises in workout. Say an exercise first (e.g. "Bench press 40 kg 10 reps").',
+          });
+          return;
+        }
+        const currentSelectedId = selectedExerciseIdRef.current || selectedExerciseId;
+        let targetEx =
+          currentW.exercises.find((e) => e.id === currentSelectedId) ||
+          currentW.exercises[currentW.exercises.length - 1];
+        const exIdx = currentW.exercises.findIndex((e) => e.id === targetEx.id);
+
+        let sIdx = targetEx.sets.findIndex((s) => !s.isCompleted);
+        if (sIdx === -1 && targetEx.sets.length > 0) {
+          sIdx = targetEx.sets.length - 1;
+        }
+
+        if (sIdx >= 0 && targetEx.sets[sIdx]) {
+          const s = targetEx.sets[sIdx];
+          handleToggleInlineTimer(exIdx, sIdx, s.id, s.setNumber, true);
+        } else {
+          // If exercise has no sets yet, add set 1 and start its timer
+          const newSet: WorkoutSet = {
+            id: typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `s_${Date.now()}`,
+            setNumber: 1,
+            weight: 40,
+            reps: 10,
+            unit: preferredUnit,
+            isCompleted: false,
+          };
+          const updatedEx = { ...targetEx, sets: [newSet] };
+          const updatedExercises = [...currentW.exercises];
+          updatedExercises[exIdx] = updatedEx;
+          updateWorkout({ ...currentW, exercises: updatedExercises });
+          handleToggleInlineTimer(exIdx, 0, newSet.id, 1, true);
+        }
         return;
       }
 
@@ -709,7 +844,7 @@ export default function WorkoutPage() {
           parsedSetNumber: 'setNumber' in command ? command.setNumber : undefined,
           unit: 'unit' in command ? command.unit : preferredUnit,
           currentWorkout,
-          selectedExerciseId,
+          selectedExerciseId: selectedExerciseIdRef.current || selectedExerciseId,
           preferredUnit,
           customAliases,
         });
@@ -724,36 +859,54 @@ export default function WorkoutPage() {
 
       switch (command.type) {
         case 'SET_DONE': {
-          // Finalize set timer
-          let duration = setTimerSeconds;
-          if (activeSetTimer && activeSetTimer.isRunning) {
-            const timing = completeSetTimer(activeSetTimer);
-            duration = timing.durationSeconds;
-            setActiveSetTimer(null);
-          }
-          setSetTimerSeconds(0);
+          let currentW = activeWorkoutRef.current || currentWorkout;
+          if (!currentW || currentW.exercises.length === 0) break;
 
-          let updatedExercises = [...currentWorkout.exercises];
+          const currentSelectedId = selectedExerciseIdRef.current || selectedExerciseId;
+          let targetEx =
+            currentW.exercises.find((e) => e.id === currentSelectedId) ||
+            currentW.exercises[currentW.exercises.length - 1];
+          const exIdx = currentW.exercises.findIndex((e) => e.id === targetEx.id);
+
+          const sets = [...targetEx.sets];
           let updatedAny = false;
+          let finishedDuration: number | undefined;
 
-          const { exercise: currentEx } = getActiveExerciseContext();
-          if (currentEx && currentEx.sets.length > 0) {
-            const exIdx = updatedExercises.findIndex((e) => e.id === currentEx.id);
-            if (exIdx >= 0) {
-              const sets = [...updatedExercises[exIdx].sets];
-              const lastSetIdx = sets.length - 1;
-              sets[lastSetIdx] = {
-                ...sets[lastSetIdx],
+          // Check if any set in this exercise has a running timer
+          for (let sIdx = 0; sIdx < sets.length; sIdx++) {
+            const s = sets[sIdx];
+            const timer = activeSetTimersRef.current[s.id];
+            if (timer && timer.isRunning) {
+              const timing = completeSetTimer(timer);
+              finishedDuration = timing.durationSeconds;
+              const nextTimers = { ...activeSetTimersRef.current };
+              delete nextTimers[s.id];
+              activeSetTimersRef.current = nextTimers;
+              setActiveSetTimers(nextTimers);
+
+              sets[sIdx] = {
+                ...s,
                 isCompleted: true,
-                durationSeconds: sets[lastSetIdx].durationSeconds || (duration > 0 ? duration : undefined),
+                durationSeconds: timing.durationSeconds,
+                startedAt: timing.startedAt,
+                completedAt: timing.completedAt,
               };
-              updatedExercises[exIdx] = { ...updatedExercises[exIdx], sets };
               updatedAny = true;
+              break;
             }
           }
 
+          if (!updatedAny && sets.length > 0) {
+            let sIdx = sets.findIndex((s) => !s.isCompleted);
+            if (sIdx === -1) sIdx = sets.length - 1;
+            sets[sIdx] = { ...sets[sIdx], isCompleted: true };
+            updatedAny = true;
+          }
+
           if (updatedAny) {
-            updateWorkout({ ...currentWorkout, exercises: updatedExercises });
+            const updatedExercises = [...currentW.exercises];
+            updatedExercises[exIdx] = { ...targetEx, sets };
+            updateWorkout({ ...currentW, exercises: updatedExercises });
           }
 
           setShowRestTimer(true);
@@ -761,7 +914,9 @@ export default function WorkoutPage() {
           setAmbiguousCommand(null);
           setSaveStatus({
             type: 'success',
-            message: `Set completed! Rest timer started. (Set duration: ${formatDuration(duration)})`,
+            message: finishedDuration
+              ? `Set completed in ${formatSetDuration(finishedDuration)}! Rest timer started.`
+              : 'Set completed! Rest timer started.',
           });
           break;
         }
@@ -784,7 +939,7 @@ export default function WorkoutPage() {
           );
 
           if (existing) {
-            setSelectedExerciseId(existing.id);
+            updateSelectedExerciseId(existing.id);
             setSaveStatus({
               type: 'info',
               message: `Active Exercise: ${existing.exerciseName}`,
@@ -801,7 +956,7 @@ export default function WorkoutPage() {
               exercises: [...currentWorkout.exercises, newEx],
             };
             updateWorkout(updated);
-            setSelectedExerciseId(newExId);
+            updateSelectedExerciseId(newExId);
             setSaveStatus({
               type: 'info',
               message: `Created & Selected: ${command.exercise} (Speak sets to log)`,
@@ -922,7 +1077,7 @@ export default function WorkoutPage() {
             exercises: updatedExercises,
           };
           updateWorkout(updated);
-          setSelectedExerciseId(targetExerciseId);
+          updateSelectedExerciseId(targetExerciseId);
           setShowRestTimer(true);
           playSoundChime();
           setAmbiguousCommand(null);
@@ -941,7 +1096,8 @@ export default function WorkoutPage() {
           const currentReps = command.reps;
 
           // Add set to currently selected exercise
-          let targetEx = currentWorkout.exercises.find((e) => e.id === selectedExerciseId);
+          const currentSelectedId = selectedExerciseIdRef.current || selectedExerciseId;
+          let targetEx = currentWorkout.exercises.find((e) => e.id === currentSelectedId);
           if (!targetEx && currentWorkout.exercises.length > 0) {
             targetEx = currentWorkout.exercises[currentWorkout.exercises.length - 1];
           }
@@ -989,7 +1145,7 @@ export default function WorkoutPage() {
 
             const updated = { ...currentWorkout, exercises: updatedExercises };
             updateWorkout(updated);
-            setSelectedExerciseId(targetId);
+            updateSelectedExerciseId(targetId);
             setShowRestTimer(true);
             playSoundChime();
             setAmbiguousCommand(null);
@@ -1036,7 +1192,7 @@ export default function WorkoutPage() {
               exercises: updatedExercises,
             };
             updateWorkout(updated);
-            setSelectedExerciseId(targetId);
+            updateSelectedExerciseId(targetId);
             setShowRestTimer(true);
             playSoundChime();
             setAmbiguousCommand(null);
@@ -1100,13 +1256,14 @@ export default function WorkoutPage() {
       customAliases,
       pendingConfirmation,
       clarificationState,
-      activeSetTimer,
       handleStartWorkout,
       updateWorkout,
+      updateSelectedExerciseId,
       getActiveExerciseContext,
       playSoundChime,
       executeConfirmExercise,
       executeDirectSetCommand,
+      handleToggleInlineTimer,
       handleUndoLast,
       handleModifyLast,
     ]
@@ -1144,7 +1301,7 @@ export default function WorkoutPage() {
 
   // Add exercise manually
   const handleAddManualExercise = (exerciseName: string) => {
-    const base = activeWorkout || handleStartWorkout('Gym Workout');
+    const base = activeWorkoutRef.current || activeWorkout || handleStartWorkout('Gym Workout');
     const name = exerciseName.trim() || 'Exercise';
     const newExId = typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `ex_${Date.now()}`;
     const newEx: WorkoutExercise = {
@@ -1166,14 +1323,15 @@ export default function WorkoutPage() {
       ...base,
       exercises: [...base.exercises, newEx],
     });
-    setSelectedExerciseId(newExId);
+    updateSelectedExerciseId(newExId);
     setQuickExerciseInput('');
   };
 
   // Set management
   const handleAddSet = (exerciseIndex: number) => {
-    if (!activeWorkout) return;
-    const targetEx = activeWorkout.exercises[exerciseIndex];
+    const currentW = activeWorkoutRef.current || activeWorkout;
+    if (!currentW) return;
+    const targetEx = currentW.exercises[exerciseIndex];
     if (!targetEx) return;
 
     const lastSet = targetEx.sets[targetEx.sets.length - 1];
@@ -1186,14 +1344,14 @@ export default function WorkoutPage() {
       isCompleted: false,
     };
 
-    const updatedExercises = [...activeWorkout.exercises];
+    const updatedExercises = [...currentW.exercises];
     updatedExercises[exerciseIndex] = {
       ...targetEx,
       sets: [...targetEx.sets, newSet],
     };
 
-    updateWorkout({ ...activeWorkout, exercises: updatedExercises });
-    setSelectedExerciseId(targetEx.id);
+    updateWorkout({ ...currentW, exercises: updatedExercises });
+    updateSelectedExerciseId(targetEx.id);
   };
 
   const handleUpdateSet = (
@@ -1201,47 +1359,66 @@ export default function WorkoutPage() {
     setIndex: number,
     updates: Partial<WorkoutSet>
   ) => {
-    if (!activeWorkout) return;
-    const targetEx = activeWorkout.exercises[exerciseIndex];
+    const currentW = activeWorkoutRef.current || activeWorkout;
+    if (!currentW) return;
+    const targetEx = currentW.exercises[exerciseIndex];
     if (!targetEx) return;
 
     const updatedSets = [...targetEx.sets];
     updatedSets[setIndex] = { ...updatedSets[setIndex], ...updates };
 
-    const updatedExercises = [...activeWorkout.exercises];
+    const updatedExercises = [...currentW.exercises];
     updatedExercises[exerciseIndex] = { ...targetEx, sets: updatedSets };
 
-    updateWorkout({ ...activeWorkout, exercises: updatedExercises });
+    updateWorkout({ ...currentW, exercises: updatedExercises });
   };
 
   const handleDeleteSet = (exerciseIndex: number, setIndex: number) => {
-    if (!activeWorkout) return;
-    const targetEx = activeWorkout.exercises[exerciseIndex];
+    const currentW = activeWorkoutRef.current || activeWorkout;
+    if (!currentW) return;
+    const targetEx = currentW.exercises[exerciseIndex];
     if (!targetEx) return;
+
+    const setDeleted = targetEx.sets[setIndex];
+    if (setDeleted) {
+      const nextTimers = { ...activeSetTimersRef.current };
+      delete nextTimers[setDeleted.id];
+      activeSetTimersRef.current = nextTimers;
+      setActiveSetTimers(nextTimers);
+    }
 
     const updatedSets = targetEx.sets
       .filter((_, idx) => idx !== setIndex)
       .map((s, idx) => ({ ...s, setNumber: idx + 1 }));
 
-    const updatedExercises = [...activeWorkout.exercises];
+    const updatedExercises = [...currentW.exercises];
     updatedExercises[exerciseIndex] = { ...targetEx, sets: updatedSets };
 
-    updateWorkout({ ...activeWorkout, exercises: updatedExercises });
+    updateWorkout({ ...currentW, exercises: updatedExercises });
   };
 
   const handleDeleteExercise = (exerciseIndex: number) => {
-    if (!activeWorkout) return;
-    const targetEx = activeWorkout.exercises[exerciseIndex];
-    const updatedExercises = activeWorkout.exercises.filter((_, idx) => idx !== exerciseIndex);
-    updateWorkout({ ...activeWorkout, exercises: updatedExercises });
-    if (selectedExerciseId === targetEx.id) {
-      setSelectedExerciseId(updatedExercises.length > 0 ? updatedExercises[0].id : null);
+    const currentW = activeWorkoutRef.current || activeWorkout;
+    if (!currentW) return;
+    const targetEx = currentW.exercises[exerciseIndex];
+    if (targetEx) {
+      const nextTimers = { ...activeSetTimersRef.current };
+      targetEx.sets.forEach((s) => delete nextTimers[s.id]);
+      activeSetTimersRef.current = nextTimers;
+      setActiveSetTimers(nextTimers);
+    }
+
+    const updatedExercises = currentW.exercises.filter((_, idx) => idx !== exerciseIndex);
+    updateWorkout({ ...currentW, exercises: updatedExercises });
+    if (selectedExerciseIdRef.current === targetEx?.id || selectedExerciseId === targetEx?.id) {
+      updateSelectedExerciseId(updatedExercises.length > 0 ? updatedExercises[0].id : null);
     }
   };
 
-  // Finish and save workout to Supabase
+  // Finish and save workout to Supabase or local storage
   const handleFinishWorkout = async () => {
-    if (!activeWorkout) return;
+    const currentWorkout = activeWorkoutRef.current || activeWorkout;
+    if (!currentWorkout) return;
 
     // Turn off continuous listening on workout finish
     stopContinuousListening();
@@ -1250,7 +1427,7 @@ export default function WorkoutPage() {
     setSaveStatus(null);
 
     const workoutToSave: Workout = {
-      ...activeWorkout,
+      ...currentWorkout,
       completedAt: new Date().toISOString(),
       notes: workoutNotes.trim() || undefined,
     };
@@ -1259,32 +1436,40 @@ export default function WorkoutPage() {
 
     setIsSaving(false);
 
-    if (result.success && result.persistedTo === 'supabase') {
+    if (result.success) {
       setShowFinishConfirm(false);
+      updateWorkout(null);
+      updateSelectedExerciseId(null);
+      setActiveSetTimers({});
+      activeSetTimersRef.current = {};
+      setWorkoutNotes('');
+      setElapsedSeconds(0);
+      setSetTimerSeconds(0);
+      refreshRecommendations(preferredUnit);
       setSaveStatus({
         type: 'success',
-        message: 'Workout successfully saved and synced to Supabase!',
+        message:
+          result.persistedTo === 'supabase'
+            ? 'Workout successfully saved and synced to Supabase!'
+            : 'Workout successfully saved locally on this device.',
       });
-      setActiveWorkout(null);
-      setSelectedExerciseId(null);
-      setWorkoutNotes('');
-      refreshRecommendations(preferredUnit);
     } else {
       setSaveStatus({
         type: 'error',
-        message: result.error || 'Failed to sync workout to Supabase. Sign in or save locally.',
+        message: result.error || 'Failed to save workout. Sign in or save locally.',
       });
     }
   };
 
   // Save workout locally on device (Guest mode / Offline)
   const handleSaveLocally = () => {
-    if (!activeWorkout) return;
+    const currentWorkout = activeWorkoutRef.current || activeWorkout;
+    if (!currentWorkout) return;
 
     stopContinuousListening();
 
     const workoutToSave: Workout = {
-      ...activeWorkout,
+      ...currentWorkout,
       completedAt: new Date().toISOString(),
       notes: workoutNotes.trim() || undefined,
     };
@@ -1293,14 +1478,18 @@ export default function WorkoutPage() {
     setShowFinishConfirm(false);
 
     if (result.success) {
+      updateWorkout(null);
+      updateSelectedExerciseId(null);
+      setActiveSetTimers({});
+      activeSetTimersRef.current = {};
+      setWorkoutNotes('');
+      setElapsedSeconds(0);
+      setSetTimerSeconds(0);
+      refreshRecommendations(preferredUnit);
       setSaveStatus({
         type: 'info',
         message: 'Workout saved to local storage on this device.',
       });
-      setActiveWorkout(null);
-      setSelectedExerciseId(null);
-      setWorkoutNotes('');
-      refreshRecommendations(preferredUnit);
     } else {
       setSaveStatus({
         type: 'error',
@@ -1314,7 +1503,12 @@ export default function WorkoutPage() {
     if (confirm('Discard this workout? Unsaved progress will be lost.')) {
       stopContinuousListening();
       updateWorkout(null);
-      setSelectedExerciseId(null);
+      updateSelectedExerciseId(null);
+      setActiveSetTimers({});
+      activeSetTimersRef.current = {};
+      setWorkoutNotes('');
+      setElapsedSeconds(0);
+      setSetTimerSeconds(0);
       setSaveStatus(null);
     }
   };
@@ -1533,7 +1727,7 @@ export default function WorkoutPage() {
                     exercises: clonedExercises,
                   };
                   updateWorkout(newW);
-                  if (clonedExercises.length > 0) setSelectedExerciseId(clonedExercises[0].id);
+                  if (clonedExercises.length > 0) updateSelectedExerciseId(clonedExercises[0].id);
                 }}
                 className="w-full py-2.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-lime-400 text-xs font-bold border border-zinc-700 flex items-center justify-center gap-1.5 transition cursor-pointer"
               >
@@ -1602,46 +1796,6 @@ export default function WorkoutPage() {
           {/* Rest Timer Drawer if Open */}
           {showRestTimer && (
             <RestTimer onClose={() => setShowRestTimer(false)} />
-          )}
-
-          {/* Active Per-Set Duration Timer Badge (Feature 3) */}
-          {activeSetTimer && (
-            <SetTimerBadge
-              timer={activeSetTimer}
-              exerciseName={getActiveExerciseContext().exercise?.exerciseName}
-              onComplete={() => {
-                const timing = completeSetTimer(activeSetTimer);
-                setActiveSetTimer(null);
-                const { exercise: currentEx } = getActiveExerciseContext();
-                if (currentEx && currentEx.sets.length > 0) {
-                  const updatedExercises = [...activeWorkout.exercises];
-                  const exIdx = updatedExercises.findIndex((e) => e.id === currentEx.id);
-                  if (exIdx >= 0) {
-                    const sets = [...updatedExercises[exIdx].sets];
-                    const lastIdx = sets.length - 1;
-                    sets[lastIdx] = {
-                      ...sets[lastIdx],
-                      isCompleted: true,
-                      startedAt: timing.startedAt,
-                      completedAt: timing.completedAt,
-                      durationSeconds: timing.durationSeconds,
-                    };
-                    updatedExercises[exIdx] = { ...updatedExercises[exIdx], sets };
-                    updateWorkout({ ...activeWorkout, exercises: updatedExercises });
-                  }
-                }
-                setShowRestTimer(true);
-                playSoundChime();
-                setSaveStatus({
-                  type: 'success',
-                  message: `Set #${activeSetTimer.setNumber} completed in ${timing.formattedDuration}! Rest timer started.`,
-                });
-              }}
-              onCancel={() => {
-                setActiveSetTimer(null);
-                setSaveStatus({ type: 'info', message: 'Set timer cancelled.' });
-              }}
-            />
           )}
 
           {/* PERSISTENT WORKOUT LISTENING CONTROL CARD */}
@@ -1973,155 +2127,173 @@ export default function WorkoutPage() {
                   </div>
 
                   {/* Sets Table */}
-                  <div className="space-y-1.5" onClick={(e) => e.stopPropagation()}>
-                    <div className="grid grid-cols-12 gap-1 px-2 text-[10px] font-bold uppercase tracking-wider text-zinc-500">
-                      <div className="col-span-2">SET</div>
-                      <div className="col-span-4 text-center">WEIGHT ({preferredUnit})</div>
-                      <div className="col-span-3 text-center">REPS</div>
-                      <div className="col-span-3 text-right">DONE</div>
-                    </div>
+                  <div className="space-y-2" onClick={(e) => e.stopPropagation()}>
+                    {exercise.sets.map((set, setIndex) => {
+                      const currentTimer = activeSetTimers[set.id];
+                      const isTimerRunning = Boolean(currentTimer && currentTimer.isRunning);
+                      const liveElapsed = isTimerRunning && currentTimer
+                        ? Math.max(0, Math.floor((Date.now() - new Date(currentTimer.startedAt).getTime()) / 1000))
+                        : set.durationSeconds || 0;
+                      const displayDuration = formatDuration(liveElapsed);
 
-                    {exercise.sets.map((set, setIndex) => (
-                      <div
-                        key={set.id}
-                        className={`grid grid-cols-12 gap-1 items-center p-2 rounded-xl border transition ${
-                          set.isCompleted
-                            ? 'bg-lime-950/20 border-lime-500/30 text-white'
-                            : 'bg-zinc-950/70 border-zinc-800/80 text-zinc-300'
-                        }`}
-                      >
-                        {/* Set Number & Duration */}
-                        <div className="col-span-2 flex flex-col justify-center">
-                          <span className="font-bold text-xs text-zinc-400">#{set.setNumber}</span>
-                          {set.durationSeconds ? (
-                            <span className="text-[10px] font-mono text-amber-400 font-bold">
-                              {formatSetDuration(set.durationSeconds)}
-                            </span>
-                          ) : null}
+                      return (
+                        <div
+                          key={set.id}
+                          className={`p-2.5 rounded-2xl border transition space-y-2 ${
+                            set.isCompleted
+                              ? 'bg-lime-950/20 border-lime-500/30 text-white'
+                              : 'bg-zinc-950/70 border-zinc-800/80 text-zinc-300'
+                          }`}
+                        >
+                          {/* Top row: Set #, Weight, Reps, Done check, Delete */}
+                          <div className="flex items-center justify-between gap-1">
+                            {/* Set Number */}
+                            <div className="flex items-center gap-1 min-w-[28px]">
+                              <span className="font-extrabold text-xs text-zinc-400">#{set.setNumber}</span>
+                            </div>
+
+                            {/* Weight Stepper / Input */}
+                            <div className="flex items-center gap-1">
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  handleUpdateSet(exIndex, setIndex, {
+                                    weight: Math.max(0, parseFloat((set.weight - 2.5).toFixed(1))),
+                                  })
+                                }
+                                className="w-5 h-5 rounded bg-zinc-800 text-zinc-400 flex items-center justify-center text-xs hover:bg-zinc-700 cursor-pointer"
+                              >
+                                -
+                              </button>
+                              <input
+                                type="number"
+                                step="0.5"
+                                value={set.weight}
+                                onChange={(e) =>
+                                  handleUpdateSet(exIndex, setIndex, {
+                                    weight: parseFloat(e.target.value) || 0,
+                                  })
+                                }
+                                className="w-11 bg-transparent text-center font-bold text-sm text-white focus:outline-none"
+                              />
+                              <span className="text-[10px] text-zinc-500">{preferredUnit}</span>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  handleUpdateSet(exIndex, setIndex, {
+                                    weight: parseFloat((set.weight + 2.5).toFixed(1)),
+                                  })
+                                }
+                                className="w-5 h-5 rounded bg-zinc-800 text-zinc-400 flex items-center justify-center text-xs hover:bg-zinc-700 cursor-pointer"
+                              >
+                                +
+                              </button>
+                            </div>
+
+                            {/* Reps Stepper / Input */}
+                            <div className="flex items-center gap-1">
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  handleUpdateSet(exIndex, setIndex, {
+                                    reps: Math.max(1, set.reps - 1),
+                                  })
+                                }
+                                className="w-5 h-5 rounded bg-zinc-800 text-zinc-400 flex items-center justify-center text-xs hover:bg-zinc-700 cursor-pointer"
+                              >
+                                -
+                              </button>
+                              <input
+                                type="number"
+                                value={set.reps}
+                                onChange={(e) =>
+                                  handleUpdateSet(exIndex, setIndex, {
+                                    reps: parseInt(e.target.value, 10) || 0,
+                                  })
+                                }
+                                className="w-8 bg-transparent text-center font-bold text-sm text-white focus:outline-none"
+                              />
+                              <span className="text-[10px] text-zinc-500">reps</span>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  handleUpdateSet(exIndex, setIndex, {
+                                    reps: set.reps + 1,
+                                  })
+                                }
+                                className="w-5 h-5 rounded bg-zinc-800 text-zinc-400 flex items-center justify-center text-xs hover:bg-zinc-700 cursor-pointer"
+                              >
+                                +
+                              </button>
+                            </div>
+
+                            {/* Checkmark & Delete */}
+                            <div className="flex items-center gap-1">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const newCompleted = !set.isCompleted;
+                                  handleUpdateSet(exIndex, setIndex, { isCompleted: newCompleted });
+                                  if (newCompleted) setShowRestTimer(true);
+                                }}
+                                className={`w-7 h-7 rounded-lg flex items-center justify-center transition cursor-pointer ${
+                                  set.isCompleted
+                                    ? 'bg-lime-400 text-black shadow-[0_0_10px_rgba(163,230,53,0.4)]'
+                                    : 'bg-zinc-800 text-zinc-500 hover:text-white'
+                                }`}
+                                title={set.isCompleted ? 'Mark incomplete' : 'Mark done'}
+                              >
+                                <Check className="h-4 w-4 stroke-[3]" />
+                              </button>
+
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteSet(exIndex, setIndex)}
+                                className="text-zinc-600 hover:text-rose-400 p-1 cursor-pointer"
+                                title="Delete set"
+                              >
+                                <Trash2 className="h-3 w-3" />
+                              </button>
+                            </div>
+                          </div>
+
+                          {/* Inline Set Timer Control (Button + Elapsed Duration) */}
+                          <div className="flex items-center justify-between pt-1.5 border-t border-zinc-800/60 text-xs">
+                            <div className="flex items-center gap-2">
+                              <button
+                                type="button"
+                                onClick={() => handleToggleInlineTimer(exIndex, setIndex, set.id, set.setNumber)}
+                                className={`px-3 py-1 rounded-lg text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
+                                  isTimerRunning
+                                    ? 'bg-amber-500 text-black animate-pulse hover:bg-amber-400 shadow-[0_0_10px_rgba(245,158,11,0.3)]'
+                                    : 'bg-zinc-850 hover:bg-zinc-800 text-zinc-300 border border-zinc-700/80'
+                                }`}
+                              >
+                                <Timer className="h-3.5 w-3.5" />
+                                <span>{isTimerRunning ? 'Stop Timer' : 'Start Timer'}</span>
+                              </button>
+                              <span className={`font-mono text-xs font-bold ${isTimerRunning ? 'text-amber-300 animate-pulse' : 'text-zinc-400'}`}>
+                                {displayDuration}
+                              </span>
+                            </div>
+                            {set.durationSeconds && !isTimerRunning ? (
+                              <span className="text-[10px] text-zinc-500">Recorded</span>
+                            ) : null}
+                          </div>
                         </div>
-
-                        {/* Weight Stepper / Input */}
-                        <div className="col-span-4 flex items-center justify-center gap-1">
-                          <button
-                            onClick={() =>
-                              handleUpdateSet(exIndex, setIndex, {
-                                weight: Math.max(0, parseFloat((set.weight - 2.5).toFixed(1))),
-                              })
-                            }
-                            className="w-5 h-5 rounded bg-zinc-800 text-zinc-400 flex items-center justify-center text-xs hover:bg-zinc-700 cursor-pointer"
-                          >
-                            -
-                          </button>
-                          <input
-                            type="number"
-                            step="0.5"
-                            value={set.weight}
-                            onChange={(e) =>
-                              handleUpdateSet(exIndex, setIndex, {
-                                weight: parseFloat(e.target.value) || 0,
-                              })
-                            }
-                            className="w-12 bg-transparent text-center font-bold text-sm text-white focus:outline-none"
-                          />
-                          <button
-                            onClick={() =>
-                              handleUpdateSet(exIndex, setIndex, {
-                                weight: parseFloat((set.weight + 2.5).toFixed(1)),
-                              })
-                            }
-                            className="w-5 h-5 rounded bg-zinc-800 text-zinc-400 flex items-center justify-center text-xs hover:bg-zinc-700 cursor-pointer"
-                          >
-                            +
-                          </button>
-                        </div>
-
-                        {/* Reps Stepper / Input */}
-                        <div className="col-span-3 flex items-center justify-center gap-1">
-                          <button
-                            onClick={() =>
-                              handleUpdateSet(exIndex, setIndex, {
-                                reps: Math.max(1, set.reps - 1),
-                              })
-                            }
-                            className="w-5 h-5 rounded bg-zinc-800 text-zinc-400 flex items-center justify-center text-xs hover:bg-zinc-700 cursor-pointer"
-                          >
-                            -
-                          </button>
-                          <input
-                            type="number"
-                            value={set.reps}
-                            onChange={(e) =>
-                              handleUpdateSet(exIndex, setIndex, {
-                                reps: parseInt(e.target.value, 10) || 0,
-                              })
-                            }
-                            className="w-8 bg-transparent text-center font-bold text-sm text-white focus:outline-none"
-                          />
-                          <button
-                            onClick={() =>
-                              handleUpdateSet(exIndex, setIndex, {
-                                reps: set.reps + 1,
-                              })
-                            }
-                            className="w-5 h-5 rounded bg-zinc-800 text-zinc-400 flex items-center justify-center text-xs hover:bg-zinc-700 cursor-pointer"
-                          >
-                            +
-                          </button>
-                        </div>
-
-                        {/* Checkmark & Delete */}
-                        <div className="col-span-3 flex items-center justify-end gap-1.5">
-                          <button
-                            onClick={() => {
-                              const newCompleted = !set.isCompleted;
-                              handleUpdateSet(exIndex, setIndex, { isCompleted: newCompleted });
-                              if (newCompleted) setShowRestTimer(true);
-                            }}
-                            className={`w-7 h-7 rounded-lg flex items-center justify-center transition cursor-pointer ${
-                              set.isCompleted
-                                ? 'bg-lime-400 text-black shadow-[0_0_10px_rgba(163,230,53,0.4)]'
-                                : 'bg-zinc-800 text-zinc-500 hover:text-white'
-                            }`}
-                          >
-                            <Check className="h-4 w-4 stroke-[3]" />
-                          </button>
-
-                          <button
-                            onClick={() => handleDeleteSet(exIndex, setIndex)}
-                            className="text-zinc-600 hover:text-rose-400 p-1 cursor-pointer"
-                          >
-                            <Trash2 className="h-3 w-3" />
-                          </button>
-                        </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
 
-                  {/* Set Action Buttons */}
-                  <div className="flex gap-2" onClick={(e) => e.stopPropagation()}>
+                  {/* Set Action Button */}
+                  <div onClick={(e) => e.stopPropagation()}>
                     <button
+                      type="button"
                       onClick={() => handleAddSet(exIndex)}
-                      className="flex-1 py-2 rounded-xl bg-zinc-800/80 hover:bg-zinc-800 text-xs font-bold text-zinc-300 flex items-center justify-center gap-1.5 transition cursor-pointer"
+                      className="w-full py-2.5 rounded-xl bg-zinc-800/80 hover:bg-zinc-800 text-xs font-bold text-zinc-300 flex items-center justify-center gap-1.5 transition cursor-pointer border border-zinc-750"
                     >
                       <Plus className="h-3.5 w-3.5 text-lime-400" />
                       <span>Add Set</span>
-                    </button>
-
-                    <button
-                      onClick={() => {
-                        const targetEx = activeWorkout.exercises[exIndex];
-                        const nextNum = targetEx.sets.length + 1;
-                        setActiveSetTimer(startSetTimer(targetEx.id, nextNum));
-                        playSoundChime();
-                        setSaveStatus({
-                          type: 'info',
-                          message: `Timer started for ${targetEx.exerciseName} Set #${nextNum}. Say 'Set done' when completed.`,
-                        });
-                      }}
-                      className="flex-1 py-2 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 text-amber-300 text-xs font-bold flex items-center justify-center gap-1.5 transition cursor-pointer"
-                    >
-                      <Timer className="h-3.5 w-3.5 text-amber-400" />
-                      <span>Start Set Timer</span>
                     </button>
                   </div>
                 </div>

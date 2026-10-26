@@ -7,6 +7,7 @@
 export interface ActiveSetTimerState {
   exerciseId: string;
   setNumber: number;
+  setId?: string;
   startedAt: string;       // ISO string
   startedAtMs: number;     // Monotonic reference
   isRunning: boolean;
@@ -23,11 +24,12 @@ export interface CompletedSetTiming {
 /**
  * Starts a new set timer.
  */
-export function startSetTimer(exerciseId: string, setNumber: number): ActiveSetTimerState {
+export function startSetTimer(exerciseId: string, setNumber: number, setId?: string): ActiveSetTimerState {
   const now = Date.now();
   return {
     exerciseId,
     setNumber,
+    setId,
     startedAt: new Date(now).toISOString(),
     startedAtMs: now,
     isRunning: true,
