@@ -127,17 +127,17 @@ export function DailyRecommendationCard({
 
   // Case: Active Workout Recommendation
   return (
-    <div className="p-5 rounded-3xl bg-zinc-900/90 border border-lime-400/40 shadow-[0_0_30px_rgba(163,230,53,0.12)] space-y-4">
+    <div className="p-5 rounded-3xl bg-zinc-950 border border-zinc-800 shadow-xl space-y-4">
       {/* Header */}
       <div className="flex items-start justify-between">
         <div>
           <div className="flex items-center gap-1.5 mb-1">
-            <Sparkles className="h-3.5 w-3.5 text-lime-400" />
-            <span className="text-[10px] font-extrabold uppercase tracking-widest text-lime-400">
+            <Sparkles className="h-3.5 w-3.5 text-zinc-300" />
+            <span className="text-[10px] font-extrabold uppercase tracking-widest text-zinc-400">
               YOUR WORKOUT FOR TODAY
             </span>
             {recommendation.isPersonalized ? (
-              <span className="px-1.5 py-0.5 rounded text-[9px] font-extrabold bg-lime-400/10 text-lime-400 border border-lime-400/30">
+              <span className="px-1.5 py-0.5 rounded text-[9px] font-extrabold bg-zinc-800 text-zinc-200 border border-zinc-700">
                 Personalized
               </span>
             ) : (
@@ -160,8 +160,8 @@ export function DailyRecommendationCard({
       </div>
 
       {/* Explainability Banner */}
-      <div className="p-3 rounded-2xl bg-zinc-950/70 border border-zinc-800 flex items-start gap-2 text-xs">
-        <Info className="h-3.5 w-3.5 text-lime-400 shrink-0 mt-0.5" />
+      <div className="p-3 rounded-2xl bg-black border border-zinc-800 flex items-start gap-2 text-xs">
+        <Info className="h-3.5 w-3.5 text-zinc-400 shrink-0 mt-0.5" />
         <div className="flex-1">
           <p className="text-zinc-300 text-[11px] leading-relaxed">
             <span className="font-bold text-white">Why recommended: </span>
@@ -178,7 +178,7 @@ export function DailyRecommendationCard({
         </div>
 
         {recommendation.exercises.length === 0 ? (
-          <div className="p-4 text-center rounded-2xl bg-zinc-950 border border-dashed border-zinc-800 text-xs text-zinc-400">
+          <div className="p-4 text-center rounded-2xl bg-black border border-dashed border-zinc-800 text-xs text-zinc-400">
             All exercises skipped. You can start an empty workout or reset suggestions.
           </div>
         ) : (
@@ -188,23 +188,23 @@ export function DailyRecommendationCard({
             return (
               <div
                 key={item.id}
-                className="p-3 rounded-2xl bg-zinc-950/90 border border-zinc-800 hover:border-zinc-700 transition space-y-2"
+                className="p-3 rounded-2xl bg-zinc-900 border border-zinc-800 hover:border-zinc-700 transition space-y-2"
               >
                 <div className="flex items-start justify-between gap-2">
                   <div className="flex-1">
                     <div className="flex items-center gap-2">
                       <span className="font-bold text-sm text-white">{item.exerciseName}</span>
-                      <span className="text-[9px] uppercase font-extrabold px-1.5 py-0.5 rounded bg-zinc-850 text-zinc-400 border border-zinc-750">
+                      <span className="text-[9px] uppercase font-extrabold px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-300 border border-zinc-700">
                         {item.muscleGroup}
                       </span>
                     </div>
 
-                    <div className="text-xs text-lime-400 font-bold mt-0.5 flex items-center gap-2">
+                    <div className="text-xs text-zinc-200 font-bold mt-0.5 flex items-center gap-2">
                       <span>
                         {item.targetSets} sets × {item.targetReps} reps
                       </span>
                       {item.targetWeight ? (
-                        <span className="text-zinc-300 font-mono">
+                        <span className="text-zinc-400 font-mono">
                           @ {item.targetWeight} {item.unit}
                         </span>
                       ) : (
@@ -227,8 +227,8 @@ export function DailyRecommendationCard({
                       onClick={() => setActiveSwapExerciseId(isSwapping ? null : item.id)}
                       className={`p-1.5 rounded-xl border text-xs font-bold transition ${
                         isSwapping
-                          ? 'bg-lime-400 text-black border-lime-400'
-                          : 'bg-zinc-900 hover:bg-zinc-800 text-zinc-300 border-zinc-700'
+                          ? 'bg-white text-black border-white'
+                          : 'bg-zinc-800 hover:bg-zinc-700 text-zinc-300 border-zinc-700'
                       }`}
                       title="Swap for alternative variation"
                     >
@@ -237,7 +237,7 @@ export function DailyRecommendationCard({
 
                     <button
                       onClick={() => handleSkip(item.id)}
-                      className="p-1.5 rounded-xl bg-zinc-900 hover:bg-rose-950/40 text-zinc-400 hover:text-rose-400 border border-zinc-800 hover:border-rose-800/40 text-xs font-bold transition"
+                      className="p-1.5 rounded-xl bg-zinc-800 hover:bg-rose-950/40 text-zinc-400 hover:text-rose-400 border border-zinc-700 hover:border-rose-800/40 text-xs font-bold transition"
                       title="Skip this exercise"
                     >
                       <Trash2 className="h-3.5 w-3.5" />
@@ -247,8 +247,8 @@ export function DailyRecommendationCard({
 
                 {/* Inline Variation Swap Drawer */}
                 {isSwapping && (
-                  <div className="p-3 rounded-xl bg-zinc-900 border border-lime-400/30 space-y-2 animate-in fade-in">
-                    <div className="flex items-center justify-between text-[11px] font-bold text-lime-300">
+                  <div className="p-3 rounded-xl bg-black border border-zinc-700 space-y-2 animate-in fade-in">
+                    <div className="flex items-center justify-between text-[11px] font-bold text-zinc-200">
                       <span>Select Variation for {item.exerciseName}:</span>
                       <button
                         onClick={() => setActiveSwapExerciseId(null)}
@@ -263,15 +263,15 @@ export function DailyRecommendationCard({
                         <button
                           key={v.name}
                           onClick={() => handleSwap(item.id, v.name)}
-                          className="w-full text-left p-2 rounded-lg bg-zinc-950 hover:bg-lime-400/10 hover:border-lime-400/40 border border-zinc-800 text-xs text-zinc-200 flex items-center justify-between group transition"
+                          className="w-full text-left p-2 rounded-lg bg-zinc-900 hover:bg-zinc-800 hover:border-zinc-600 border border-zinc-800 text-xs text-zinc-200 flex items-center justify-between group transition"
                         >
                           <div>
-                            <span className="font-bold text-white group-hover:text-lime-300">
+                            <span className="font-bold text-white group-hover:text-zinc-100">
                               {v.name}
                             </span>
                             <span className="text-[10px] text-zinc-500 block">{v.reason}</span>
                           </div>
-                          <ArrowRight className="h-3.5 w-3.5 text-zinc-600 group-hover:text-lime-400" />
+                          <ArrowRight className="h-3.5 w-3.5 text-zinc-500 group-hover:text-white" />
                         </button>
                       ))}
                     </div>
@@ -293,7 +293,7 @@ export function DailyRecommendationCard({
         <button
           onClick={() => onAcceptWorkout(recommendation)}
           disabled={recommendation.exercises.length === 0}
-          className="w-full py-3.5 rounded-2xl bg-gradient-to-r from-lime-400 to-lime-300 hover:from-lime-300 hover:to-lime-200 disabled:opacity-40 text-black font-black text-sm flex items-center justify-center gap-2 shadow-[0_0_20px_rgba(163,230,53,0.3)] active:scale-95 transition cursor-pointer"
+          className="w-full py-3.5 rounded-2xl bg-white hover:bg-zinc-200 disabled:opacity-40 text-black font-black text-sm flex items-center justify-center gap-2 shadow-[0_0_20px_rgba(255,255,255,0.15)] active:scale-95 transition cursor-pointer"
         >
           <Play className="h-4 w-4 text-black fill-black" />
           <span>START RECOMMENDED WORKOUT</span>
@@ -301,7 +301,7 @@ export function DailyRecommendationCard({
 
         <button
           onClick={onDismiss}
-          className="w-full py-2.5 rounded-2xl bg-zinc-900 hover:bg-zinc-850 text-zinc-400 hover:text-zinc-200 text-xs font-bold border border-zinc-800 transition cursor-pointer"
+          className="w-full py-2.5 rounded-2xl bg-zinc-900 hover:bg-zinc-800 text-zinc-400 hover:text-zinc-200 text-xs font-bold border border-zinc-800 transition cursor-pointer"
         >
           Dismiss &amp; Choose Own Workout
         </button>

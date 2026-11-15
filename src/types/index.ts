@@ -171,6 +171,16 @@ export type WorkoutVoiceCommand =
       rawTranscript: string;
     }
   | {
+      type: 'START_WORKOUT';
+      title?: string;
+      rawTranscript: string;
+    }
+  | {
+      type: 'START_REST';
+      seconds?: number;
+      rawTranscript: string;
+    }
+  | {
       type: 'UNDO_LAST';
       rawTranscript: string;
     }

@@ -141,7 +141,7 @@ export default function HistoryPage() {
         >
           <div className="flex items-start justify-between">
             <div>
-              <span className="text-[10px] font-bold uppercase tracking-wider text-lime-400 block mb-0.5">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-400 block mb-0.5">
                 {formatDate(workout.startedAt)}
               </span>
               <h2 className="text-base font-extrabold text-white">{workout.title}</h2>
@@ -160,7 +160,7 @@ export default function HistoryPage() {
               </button>
               <button className="p-1.5 rounded-lg text-zinc-400">
                 {isExpanded ? (
-                  <ChevronUp className="h-4 w-4 text-lime-400" />
+                  <ChevronUp className="h-4 w-4 text-zinc-300" />
                 ) : (
                   <ChevronDown className="h-4 w-4" />
                 )}
@@ -171,12 +171,12 @@ export default function HistoryPage() {
           {/* Summary Metrics Pill Bar */}
           <div className="flex items-center gap-3 mt-3 text-xs text-zinc-300">
             <span className="flex items-center gap-1">
-              <Clock className="h-3.5 w-3.5 text-lime-400" />
+              <Clock className="h-3.5 w-3.5 text-zinc-400" />
               {getDurationText(workout)}
             </span>
             <span>•</span>
             <span className="flex items-center gap-1">
-              <Flame className="h-3.5 w-3.5 text-lime-400" />
+              <Flame className="h-3.5 w-3.5 text-zinc-400" />
               {volume.toLocaleString()} kg
             </span>
             <span>•</span>
@@ -223,7 +223,7 @@ export default function HistoryPage() {
                             <span className="font-mono text-amber-400">({s.durationSeconds}s)</span>
                           ) : null}
                         </div>
-                        <span className="font-extrabold text-xs text-lime-400">
+                        <span className="font-extrabold text-xs text-white">
                           {s.weight} {s.unit || 'kg'}{' '}
                           <span className="text-zinc-300 font-normal">× {s.reps}</span>
                         </span>
@@ -238,7 +238,7 @@ export default function HistoryPage() {
             <div className="pt-2">
               <button
                 onClick={() => handleRepeat(workout)}
-                className="w-full py-2.5 rounded-xl bg-lime-400 hover:bg-lime-300 text-black font-extrabold text-xs flex items-center justify-center gap-1.5 shadow-[0_0_15px_rgba(163,230,53,0.25)] transition"
+                className="w-full py-2.5 rounded-xl bg-white hover:bg-zinc-200 text-black font-extrabold text-xs flex items-center justify-center gap-1.5 shadow-md transition cursor-pointer"
               >
                 <RotateCcw className="h-3.5 w-3.5" />
                 Repeat This Workout
@@ -255,7 +255,7 @@ export default function HistoryPage() {
       {/* Header */}
       <div className="flex items-center justify-between pt-1">
         <div>
-          <span className="text-[10px] font-extrabold uppercase tracking-widest text-lime-400 block mb-0.5">
+          <span className="text-[10px] font-extrabold uppercase tracking-widest text-zinc-400 block mb-0.5">
             TRAINING ARCHIVE
           </span>
           <h1 className="text-2xl font-black text-white tracking-tight">Workout History</h1>
@@ -266,8 +266,8 @@ export default function HistoryPage() {
             onClick={() => setShowCalendarModal(true)}
             className={`p-2.5 rounded-xl border transition flex items-center gap-1.5 cursor-pointer ${
               selectedDateKey
-                ? 'bg-lime-400 text-black border-lime-400 font-extrabold shadow-[0_0_12px_rgba(163,230,53,0.3)]'
-                : 'bg-zinc-900 border-zinc-800 text-zinc-300 hover:text-white hover:border-zinc-700'
+                ? 'bg-white text-black border-white font-extrabold shadow-sm'
+                : 'bg-zinc-900 border-zinc-800 text-zinc-300 hover:text-white hover:border-zinc-750'
             }`}
             title="Filter by calendar date"
           >
@@ -278,18 +278,18 @@ export default function HistoryPage() {
           <button
             onClick={fetchHistory}
             disabled={isLoading}
-            className="p-2.5 rounded-xl bg-zinc-900 border border-zinc-800 hover:border-zinc-700 text-zinc-300 hover:text-white transition active:scale-95 disabled:opacity-50 cursor-pointer"
+            className="p-2.5 rounded-xl bg-zinc-900 border border-zinc-800 hover:border-zinc-750 text-zinc-300 hover:text-white transition active:scale-95 disabled:opacity-50 cursor-pointer"
             title="Refresh history"
           >
-            <RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin text-lime-400' : ''}`} />
+            <RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin text-white' : ''}`} />
           </button>
         </div>
       </div>
 
       {/* Stitch Monthly Rollup Snapshot */}
       {workouts.length > 0 && (
-        <div className="grid grid-cols-3 gap-2.5 p-3 rounded-2xl bg-[#1a1c22] border border-white/5 shadow-md">
-          <div className="text-center p-2 rounded-xl bg-[#111317]/60 border border-white/5">
+        <div className="grid grid-cols-3 gap-2.5 p-3 rounded-2xl bg-zinc-950 border border-zinc-800 shadow-md">
+          <div className="text-center p-2 rounded-xl bg-zinc-900 border border-zinc-850">
             <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block">
               Workouts
             </span>
@@ -297,19 +297,19 @@ export default function HistoryPage() {
               {rollup.totalWorkouts}
             </span>
           </div>
-          <div className="text-center p-2 rounded-xl bg-[#111317]/60 border border-white/5">
+          <div className="text-center p-2 rounded-xl bg-zinc-900 border border-zinc-850">
             <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block">
               Volume
             </span>
-            <span className="text-base font-extrabold text-[#c8f322] font-mono">
+            <span className="text-base font-extrabold text-white font-mono">
               {rollup.totalVolume >= 1000 ? `${(rollup.totalVolume / 1000).toFixed(1)}k` : rollup.totalVolume}
             </span>
           </div>
-          <div className="text-center p-2 rounded-xl bg-[#111317]/60 border border-white/5">
+          <div className="text-center p-2 rounded-xl bg-zinc-900 border border-zinc-850">
             <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block">
               Avg Time
             </span>
-            <span className="text-base font-extrabold text-[#7bd0ff] font-mono">
+            <span className="text-base font-extrabold text-zinc-200 font-mono">
               {rollup.avgDurationMinutes}m
             </span>
           </div>
@@ -318,9 +318,9 @@ export default function HistoryPage() {
 
       {/* Calendar Filter Indicator Bar if active */}
       {selectedDateKey && (
-        <div className="p-3 rounded-2xl bg-zinc-900 border border-lime-500/40 flex items-center justify-between text-xs animate-in fade-in">
+        <div className="p-3 rounded-2xl bg-zinc-900 border border-zinc-700 flex items-center justify-between text-xs animate-in fade-in">
           <div className="flex items-center gap-2">
-            <Calendar className="h-4 w-4 text-lime-400" />
+            <Calendar className="h-4 w-4 text-white" />
             <span className="text-zinc-200">
               Showing date: <strong className="text-white">{formatLocalDateLabel(selectedDateKey)}</strong>
             </span>
@@ -339,13 +339,13 @@ export default function HistoryPage() {
       <div className="flex items-center justify-between p-3 rounded-2xl bg-zinc-900/60 border border-zinc-800 text-xs">
         <div className="flex items-center gap-2">
           {dataSource === 'supabase' ? (
-            <div className="flex items-center gap-1.5 text-lime-400 font-bold">
-              <ShieldCheck className="h-4 w-4" />
+            <div className="flex items-center gap-1.5 text-white font-bold">
+              <ShieldCheck className="h-4 w-4 text-white" />
               <span>Synced with Supabase PostgreSQL</span>
             </div>
           ) : (
-            <div className="flex items-center gap-1.5 text-amber-400 font-semibold">
-              <HardDrive className="h-4 w-4" />
+            <div className="flex items-center gap-1.5 text-zinc-300 font-semibold">
+              <HardDrive className="h-4 w-4 text-zinc-400" />
               <span>Loaded from Local Storage (Offline / Guest)</span>
             </div>
           )}
@@ -385,8 +385,8 @@ export default function HistoryPage() {
       {/* Empty State when no workouts exist at all */}
       {!isLoading && workouts.length === 0 && (
         <div className="py-16 text-center rounded-3xl bg-zinc-900/40 border border-dashed border-zinc-800 p-6 space-y-4">
-          <div className="w-14 h-14 rounded-2xl bg-zinc-900 text-lime-400 mx-auto flex items-center justify-center border border-zinc-800 shadow-lg">
-            <Dumbbell className="h-7 w-7 text-lime-400" />
+          <div className="w-14 h-14 rounded-2xl bg-zinc-900 text-zinc-300 mx-auto flex items-center justify-center border border-zinc-800 shadow-lg">
+            <Dumbbell className="h-7 w-7 text-white" />
           </div>
           <div>
             <h3 className="font-bold text-white text-base">No Workouts Logged Yet</h3>
@@ -396,7 +396,7 @@ export default function HistoryPage() {
           </div>
           <button
             onClick={() => router.push('/')}
-            className="px-5 py-2.5 rounded-xl bg-lime-400 hover:bg-lime-300 text-black font-extrabold text-xs inline-flex items-center gap-1.5 shadow-[0_0_15px_rgba(163,230,53,0.3)] transition"
+            className="px-5 py-2.5 rounded-xl bg-white hover:bg-zinc-200 text-black font-extrabold text-xs inline-flex items-center gap-1.5 shadow-md transition"
           >
             <Plus className="h-4 w-4" /> Start First Workout
           </button>
@@ -418,7 +418,7 @@ export default function HistoryPage() {
                   </p>
                   <button
                     onClick={() => setSelectedDateKey(null)}
-                    className="mt-2 text-xs font-bold text-lime-400 hover:underline"
+                    className="mt-2 text-xs font-bold text-white hover:underline"
                   >
                     Return to Today & Yesterday
                   </button>
@@ -441,8 +441,8 @@ export default function HistoryPage() {
                 {/* Section: Today */}
                 <div className="space-y-2.5">
                   <div className="flex items-center justify-between px-1">
-                    <h2 className="text-xs font-black uppercase tracking-wider text-lime-400 flex items-center gap-1.5">
-                      <span className="w-2 h-2 rounded-full bg-lime-400 inline-block animate-pulse" />
+                    <h2 className="text-xs font-black uppercase tracking-wider text-white flex items-center gap-1.5">
+                      <span className="w-2 h-2 rounded-full bg-white inline-block animate-pulse" />
                       Today
                     </h2>
                     <span className="text-[11px] font-mono text-zinc-500">
@@ -491,7 +491,7 @@ export default function HistoryPage() {
                     </span>
                     <button
                       onClick={() => setShowCalendarModal(true)}
-                      className="font-bold text-lime-400 hover:underline flex items-center gap-1 cursor-pointer"
+                      className="font-bold text-white hover:underline flex items-center gap-1 cursor-pointer"
                     >
                       <Calendar className="h-3.5 w-3.5" />
                       <span>Explore Past Dates</span>

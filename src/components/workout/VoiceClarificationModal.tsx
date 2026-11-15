@@ -78,10 +78,10 @@ export function VoiceClarificationModal({
         {/* Header Badge */}
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-full bg-lime-400/10 text-lime-400 border border-lime-400/30 flex items-center justify-center">
+            <div className="w-8 h-8 rounded-full bg-zinc-800 text-white border border-zinc-700 flex items-center justify-center">
               <HelpCircle className="h-4 w-4" />
             </div>
-            <span className="text-[10px] font-extrabold uppercase tracking-widest text-lime-400">
+            <span className="text-[10px] font-extrabold uppercase tracking-widest text-zinc-400">
               {viewMode === 'CHOOSE_EXERCISE'
                 ? 'SELECT REPLACEMENT'
                 : viewMode === 'ENTER_WEIGHT'
@@ -103,12 +103,12 @@ export function VoiceClarificationModal({
           <span className="text-zinc-500 font-semibold">Captured:</span>
           {clarification.exerciseName || clarification.suggestedExercise ? (
             <span className="px-2 py-0.5 rounded-md bg-zinc-800 font-bold text-white flex items-center gap-1">
-              <Dumbbell className="h-3 w-3 text-lime-400" />
+              <Dumbbell className="h-3 w-3 text-white" />
               {clarification.exerciseName || clarification.suggestedExercise}
             </span>
           ) : null}
           {clarification.setNumber ? (
-            <span className="px-2 py-0.5 rounded-md bg-zinc-800 font-mono text-lime-400 font-bold">
+            <span className="px-2 py-0.5 rounded-md bg-zinc-800 font-mono text-white font-bold">
               Set #{clarification.setNumber}
             </span>
           ) : null}
@@ -133,7 +133,7 @@ export function VoiceClarificationModal({
                 {clarification.questionPrompt}
               </h3>
               <p className="text-xs text-zinc-400 flex items-center gap-1.5 pt-0.5">
-                <Mic className="h-3 w-3 text-lime-400 animate-pulse" />
+                <Mic className="h-3 w-3 text-zinc-300 animate-pulse" />
                 <span>Speak your answer or tap an option below</span>
               </p>
             </div>
@@ -145,7 +145,7 @@ export function VoiceClarificationModal({
                   onClick={() => handleOptionClick(option)}
                   className={`w-full py-2.5 px-3.5 rounded-xl font-bold text-xs flex items-center justify-between transition cursor-pointer ${
                     idx === 0
-                      ? 'bg-lime-400 hover:bg-lime-300 text-black shadow-[0_0_15px_rgba(163,230,53,0.25)]'
+                      ? 'bg-white hover:bg-zinc-200 text-black shadow-[0_0_15px_rgba(255,255,255,0.15)]'
                       : 'bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border border-zinc-750'
                   }`}
                 >
@@ -190,13 +190,13 @@ export function VoiceClarificationModal({
                   if (e.key === 'Enter') handleConfirmCustomExercise(customExerciseInput);
                 }}
                 placeholder="Type exercise name..."
-                className="flex-1 bg-zinc-950 border border-zinc-700 rounded-xl px-3 py-2 text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-lime-400 transition"
+                className="flex-1 bg-zinc-950 border border-zinc-700 rounded-xl px-3 py-2 text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-zinc-500 transition"
                 autoFocus
               />
               <button
                 onClick={() => handleConfirmCustomExercise(customExerciseInput)}
                 disabled={!customExerciseInput.trim()}
-                className="px-4 py-2 bg-lime-400 hover:bg-lime-300 text-black font-extrabold text-xs rounded-xl disabled:opacity-40 transition cursor-pointer"
+                className="px-4 py-2 bg-white hover:bg-zinc-200 text-black font-extrabold text-xs rounded-xl disabled:opacity-40 transition cursor-pointer"
               >
                 Confirm
               </button>
@@ -221,7 +221,7 @@ export function VoiceClarificationModal({
             </div>
 
             <p className="text-[11px] text-zinc-400 flex items-center gap-1.5 pt-1 border-t border-zinc-800/80">
-              <Mic className="h-3 w-3 text-lime-400 animate-pulse" />
+              <Mic className="h-3 w-3 text-zinc-300 animate-pulse" />
               <span>Or speak: “No, Barbell Row”</span>
             </p>
           </div>
@@ -259,7 +259,7 @@ export function VoiceClarificationModal({
                     if (e.key === 'Enter') handleConfirmCustomWeight();
                   }}
                   placeholder="e.g. 50"
-                  className="w-full bg-zinc-950 border border-zinc-700 rounded-xl px-3 py-2 text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-lime-400 transition"
+                  className="w-full bg-zinc-950 border border-zinc-700 rounded-xl px-3 py-2 text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-zinc-500 transition"
                   autoFocus
                 />
                 <span className="absolute right-3 top-2 text-xs font-bold text-zinc-500 uppercase">
@@ -269,14 +269,14 @@ export function VoiceClarificationModal({
               <button
                 onClick={handleConfirmCustomWeight}
                 disabled={!customWeightInput || isNaN(parseFloat(customWeightInput))}
-                className="px-4 py-2 bg-lime-400 hover:bg-lime-300 text-black font-extrabold text-xs rounded-xl disabled:opacity-40 transition cursor-pointer"
+                className="px-4 py-2 bg-white hover:bg-zinc-200 text-black font-extrabold text-xs rounded-xl disabled:opacity-40 transition cursor-pointer"
               >
                 Save
               </button>
             </div>
 
             <p className="text-[11px] text-zinc-400 flex items-center gap-1.5 pt-1 border-t border-zinc-800/80">
-              <Mic className="h-3 w-3 text-lime-400 animate-pulse" />
+              <Mic className="h-3 w-3 text-zinc-300 animate-pulse" />
               <span>Or speak your weight aloud (e.g. “50 {clarification.unit}” or “50”)</span>
             </p>
           </div>

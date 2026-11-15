@@ -103,11 +103,11 @@ export function WorkoutReviewModal({
         {/* Header Bar */}
         <div className="flex items-center justify-between pb-3 border-b border-white/10 flex-shrink-0">
           <div className="flex items-center gap-2">
-            <span className="w-7 h-7 rounded-xl bg-[#c8f322]/15 border border-[#c8f322]/30 flex items-center justify-center text-[#c8f322]">
+            <span className="w-7 h-7 rounded-xl bg-zinc-800 border border-zinc-700 flex items-center justify-center text-white">
               <Sparkles className="w-4 h-4" />
             </span>
             <div>
-              <span className="text-[10px] font-extrabold uppercase tracking-widest text-[#aed500] block leading-none">
+              <span className="text-[10px] font-extrabold uppercase tracking-widest text-zinc-400 block leading-none">
                 Workout Summary
               </span>
               <h2 className="text-base font-bold text-white tracking-tight">
@@ -127,13 +127,13 @@ export function WorkoutReviewModal({
         <div className="overflow-y-auto flex-1 space-y-4 py-4 pr-1">
           {/* PR Banner if Any PRs Established */}
           {detectedPRs.length > 0 && (
-            <div className="rounded-2xl bg-gradient-to-r from-[#c8f322]/15 via-zinc-900 to-indigo-950/30 border border-[#c8f322]/30 p-3.5 relative overflow-hidden">
+            <div className="rounded-2xl bg-zinc-900 border border-zinc-750 p-3.5 relative overflow-hidden">
               <div className="flex items-start gap-3 relative z-10">
-                <div className="w-10 h-10 rounded-xl bg-[#c8f322] text-black flex items-center justify-center flex-shrink-0 shadow-[0_0_15px_rgba(200,243,34,0.3)]">
+                <div className="w-10 h-10 rounded-xl bg-white text-black flex items-center justify-center flex-shrink-0 shadow-[0_0_15px_rgba(255,255,255,0.2)]">
                   <Trophy className="w-5 h-5 fill-black" />
                 </div>
                 <div className="flex-1 min-w-0">
-                  <span className="text-[11px] font-extrabold uppercase tracking-wider text-[#c8f322] block">
+                  <span className="text-[11px] font-extrabold uppercase tracking-wider text-white block">
                     {detectedPRs.length} New Personal Record{detectedPRs.length > 1 ? 's' : ''}!
                   </span>
                   <div className="mt-1 space-y-1">
@@ -145,7 +145,7 @@ export function WorkoutReviewModal({
                         <span className="text-zinc-200 font-semibold truncate pr-2">
                           {pr.exerciseName}
                         </span>
-                        <span className="text-[#c8f322] font-mono font-bold whitespace-nowrap">
+                        <span className="text-white font-mono font-bold whitespace-nowrap">
                           {pr.recordValue} {pr.unit}
                           {pr.delta ? (
                             <span className="text-zinc-400 text-[10px] font-normal ml-1">
@@ -181,7 +181,7 @@ export function WorkoutReviewModal({
             <div className="bg-[#1a1c22] border border-white/5 rounded-2xl p-3.5 flex flex-col justify-between">
               <div className="flex items-center justify-between text-zinc-400 mb-2">
                 <span className="text-[10px] font-bold uppercase tracking-wider">Volume</span>
-                <Dumbbell className="w-4 h-4 text-[#c8f322]" />
+                <Dumbbell className="w-4 h-4 text-zinc-300" />
               </div>
               <div>
                 <span className="text-xl font-black text-white font-mono block">
@@ -229,10 +229,10 @@ export function WorkoutReviewModal({
 
           {/* Cloud Sync vs Guest Status */}
           {userEmail ? (
-            <div className="p-3 rounded-2xl bg-[#c8f322]/10 border border-[#c8f322]/20 flex items-center gap-2.5 text-xs text-zinc-300">
-              <ShieldCheck className="h-4 w-4 text-[#c8f322] shrink-0" />
+            <div className="p-3 rounded-2xl bg-zinc-900 border border-zinc-750 flex items-center gap-2.5 text-xs text-zinc-300">
+              <ShieldCheck className="h-4 w-4 text-zinc-300 shrink-0" />
               <div className="flex-1 truncate">
-                <span className="font-bold text-[#c8f322] block">Syncing to Supabase Cloud</span>
+                <span className="font-bold text-white block">Syncing to Supabase Cloud</span>
                 <p className="text-zinc-400 text-[11px] truncate">{userEmail}</p>
               </div>
             </div>
@@ -258,7 +258,7 @@ export function WorkoutReviewModal({
               onChange={(e) => onNotesChange(e.target.value)}
               placeholder="Felt strong, good pump, increased bench weight..."
               rows={2}
-              className="w-full rounded-xl bg-[#1a1c22] border border-white/10 p-3 text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-[#c8f322]"
+              className="w-full rounded-xl bg-[#1a1c22] border border-white/10 p-3 text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-zinc-500"
             />
           </div>
         </div>
@@ -275,7 +275,7 @@ export function WorkoutReviewModal({
           <button
             onClick={onSave}
             disabled={isSaving}
-            className="flex-2 w-full py-3 rounded-xl bg-[#c8f322] hover:bg-[#b8e21a] text-black font-extrabold text-sm flex items-center justify-center gap-2 shadow-[0_2px_15px_rgba(200,243,34,0.3)] transition cursor-pointer disabled:opacity-50"
+            className="flex-2 w-full py-3 rounded-xl bg-white hover:bg-zinc-200 text-black font-extrabold text-sm flex items-center justify-center gap-2 shadow-[0_2px_15px_rgba(255,255,255,0.2)] transition cursor-pointer disabled:opacity-50"
           >
             {isSaving ? (
               <>

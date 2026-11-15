@@ -379,6 +379,16 @@ export function parseWorkoutCommand(
   }
 
   // --- Step 3: Detect Standalone Control Commands ---
+  // A-0) Start workout command (from Home screen)
+  if (/^(?:start|begin)\s+(?:a\s+)?(?:workout|session)(?:\s+(.+))?$/i.test(working)) {
+    const match = working.match(/^(?:start|begin)\s+(?:a\s+)?(?:workout|session)(?:\s+(.+))?$/i);
+    return {
+      type: 'START_WORKOUT',
+      title: match && match[1] ? toTitleCase(match[1].trim()) : undefined,
+      rawTranscript: text,
+    };
+  }
+
   // A) Finish workout command
   if (/\b(?:finish|end|complete|done)\s+(?:workout|session)\b/i.test(working)) {
     return {
@@ -402,6 +412,27 @@ export function parseWorkoutCommand(
   if (/\b(?:start|begin)\s+(?:the\s+)?set\b/i.test(working)) {
     return {
       type: 'START_SET',
+      rawTranscript: text,
+    };
+  }
+
+  // C-2) Rest timer command (e.g. "rest", "rest timer", "rest timer turn on", "turn on rest timer", "start rest", "rest 90 sec")
+  const isRestTimerCommand =
+    /^(?:rest|rest\s+timer|take\s+a\s+rest|start\s+rest(?:\s+timer)?|turn\s+on\s+rest(?:\s+timer)?|rest\s+timer\s+turn\s+on|rest\s+timer\s+on)(?:\s+(?:for\s+)?(\d+)\s*(?:s|sec|seconds?|min|minutes?)?)?$/i.test(working) ||
+    /^(?:turn\s+on|start|begin)\s+(?:the\s+)?rest\s*timer$/i.test(working);
+
+  if (isRestTimerCommand) {
+    let parsedSeconds: number | undefined;
+    const secMatch = working.match(/\b(\d+)\s*(?:s|sec|seconds?)\b/i);
+    const minMatch = working.match(/\b(\d+)\s*(?:m|min|minutes?)\b/i);
+    if (secMatch) {
+      parsedSeconds = parseInt(secMatch[1], 10);
+    } else if (minMatch) {
+      parsedSeconds = parseInt(minMatch[1], 10) * 60;
+    }
+    return {
+      type: 'START_REST',
+      seconds: parsedSeconds,
       rawTranscript: text,
     };
   }

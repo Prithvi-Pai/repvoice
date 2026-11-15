@@ -143,7 +143,7 @@ export function VoiceLoggerModal({
                   startListening();
                 }
               }}
-              className="text-xs text-lime-400 bg-lime-950/60 border border-lime-800/50 px-2.5 py-0.5 rounded-full hover:bg-lime-900/40 flex items-center gap-1 font-medium transition"
+              className="text-xs text-zinc-300 bg-zinc-800 border border-zinc-700 px-2.5 py-0.5 rounded-full hover:bg-zinc-750 flex items-center gap-1 font-medium transition"
             >
               {mode === 'voice' ? (
                 <>
@@ -210,7 +210,7 @@ export function VoiceLoggerModal({
                 className={cn(
                   'relative w-24 h-24 rounded-full flex items-center justify-center transition-all duration-300 shadow-xl active:scale-95 cursor-pointer',
                   isListening
-                    ? 'bg-lime-400 text-black animate-pulse-mic shadow-[0_0_30px_rgba(163,230,53,0.5)]'
+                    ? 'bg-white text-black animate-pulse-mic shadow-[0_0_30px_rgba(255,255,255,0.4)]'
                     : 'bg-zinc-800 text-zinc-300 hover:bg-zinc-700 hover:text-white border border-zinc-700'
                 )}
               >
@@ -222,7 +222,7 @@ export function VoiceLoggerModal({
               </button>
 
               <div className="mt-3">
-                <span className="text-xs font-bold uppercase tracking-wider text-lime-400">
+                <span className="text-xs font-bold uppercase tracking-wider text-white">
                   {isListening ? 'Listening... Speak Your Sets' : 'Tap Mic to Start Speaking'}
                 </span>
                 <p className="text-[11px] text-zinc-400 mt-1 max-w-xs mx-auto">
@@ -238,7 +238,7 @@ export function VoiceLoggerModal({
                   </span>
                   <p className="text-sm text-zinc-200 font-medium">
                     {transcript}
-                    <span className="text-lime-400 italic"> {interimTranscript}</span>
+                    <span className="text-zinc-400 italic"> {interimTranscript}</span>
                   </p>
                 </div>
               )}
@@ -256,11 +256,11 @@ export function VoiceLoggerModal({
                 onChange={(e) => setManualText(e.target.value)}
                 placeholder="e.g. Squat 100 kg 5 reps, then 110 kg 5 reps"
                 rows={3}
-                className="w-full rounded-xl bg-zinc-950 border border-zinc-800 p-3 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-lime-400"
+                className="w-full rounded-xl bg-zinc-950 border border-zinc-800 p-3 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-zinc-500"
               />
               <button
                 onClick={handleManualParse}
-                className="w-full py-2.5 rounded-xl bg-lime-400 hover:bg-lime-300 text-black font-bold text-xs flex items-center justify-center gap-1.5 transition shadow-[0_0_15px_rgba(163,230,53,0.2)] cursor-pointer"
+                className="w-full py-2.5 rounded-xl bg-white hover:bg-zinc-200 text-black font-bold text-xs flex items-center justify-center gap-1.5 transition shadow-[0_0_15px_rgba(255,255,255,0.15)] cursor-pointer"
               >
                 <Sparkles className="h-4 w-4" />
                 <span>Parse Exercise & Sets</span>
@@ -270,10 +270,10 @@ export function VoiceLoggerModal({
 
           {/* Parsed Review Card (Displays detected exercise and sets) */}
           {parsedResult && (
-            <div className="p-4 rounded-2xl bg-zinc-950 border border-lime-400/40 space-y-4 animate-in slide-in-from-bottom-2 duration-300 shadow-xl">
+            <div className="p-4 rounded-2xl bg-zinc-950 border border-zinc-700 space-y-4 animate-in slide-in-from-bottom-2 duration-300 shadow-xl">
               <div className="flex items-center justify-between">
                 <div className="flex-1 mr-2">
-                  <span className="text-[10px] font-extrabold uppercase tracking-wider text-lime-400 block mb-0.5">
+                  <span className="text-[10px] font-extrabold uppercase tracking-wider text-zinc-400 block mb-0.5">
                     Recognized Exercise
                   </span>
                   <input
@@ -282,7 +282,7 @@ export function VoiceLoggerModal({
                     onChange={(e) =>
                       setParsedResult({ ...parsedResult, exercise: e.target.value })
                     }
-                    className="w-full bg-transparent font-extrabold text-lg text-white border-b border-zinc-800 hover:border-zinc-700 focus:border-lime-400 focus:outline-none pb-0.5"
+                    className="w-full bg-transparent font-extrabold text-lg text-white border-b border-zinc-800 hover:border-zinc-700 focus:border-zinc-500 focus:outline-none pb-0.5"
                     placeholder="Exercise name"
                   />
                 </div>
@@ -290,7 +290,7 @@ export function VoiceLoggerModal({
                   onClick={addExtraSet}
                   className="px-2.5 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-xs font-semibold text-zinc-200 flex items-center gap-1 border border-zinc-700 transition"
                 >
-                  <Plus className="h-3 w-3 text-lime-400" /> Set
+                  <Plus className="h-3 w-3 text-white" /> Set
                 </button>
               </div>
 
@@ -373,7 +373,7 @@ export function VoiceLoggerModal({
 
                 <button
                   onClick={handleSave}
-                  className="flex-2 w-full py-3 rounded-xl bg-lime-400 hover:bg-lime-300 text-black font-extrabold text-sm flex items-center justify-center gap-2 shadow-[0_0_20px_rgba(163,230,53,0.3)] active:scale-95 transition cursor-pointer"
+                  className="flex-2 w-full py-3 rounded-xl bg-white hover:bg-zinc-200 text-black font-extrabold text-sm flex items-center justify-center gap-2 shadow-[0_0_20px_rgba(255,255,255,0.15)] active:scale-95 transition cursor-pointer"
                 >
                   <Check className="h-4 w-4 stroke-[3]" /> Register Under Workout
                 </button>

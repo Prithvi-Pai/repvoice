@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import Link from 'next/link';
 import {
   Play,
@@ -23,6 +23,11 @@ import {
   ShieldCheck,
   AlertCircle,
   User,
+  Trophy,
+  Zap,
+  Calendar,
+  StopCircle,
+  RefreshCw,
 } from 'lucide-react';
 import {
   Workout,
@@ -34,6 +39,7 @@ import {
   ClarificationState,
   ClarificationOption,
   DailyWorkoutRecommendation,
+  WorkoutPlan,
 } from '@/types';
 import {
   getActiveWorkout,
@@ -43,6 +49,8 @@ import {
   getWorkoutHistory,
   getStoredProfile,
 } from '@/lib/storage';
+import { getWorkoutPlans, instantiateWorkoutFromPlan } from '@/lib/plans/planStore';
+import { calculateHomeDashboardMetrics } from '@/lib/analytics/metricsEngine';
 import { getSupabaseClient } from '@/lib/supabase/client';
 import { parseWorkoutCommand } from '@/lib/voice/workoutCommandParser';
 import { useContinuousWorkoutSpeech, ContinuousSpeechStatus } from '@/lib/voice/useContinuousWorkoutSpeech';
@@ -111,6 +119,59 @@ export default function WorkoutPage() {
   const [workoutHistory, setWorkoutHistory] = useState<Workout[]>([]);
   const [dailyRecommendation, setDailyRecommendation] = useState<DailyWorkoutRecommendation | null>(null);
   const [isRecommendationDismissed, setIsRecommendationDismissed] = useState<boolean>(false);
+  const [availablePlans, setAvailablePlans] = useState<WorkoutPlan[]>([]);
+  const [voiceTipIndex, setVoiceTipIndex] = useState<number>(0);
+  const [isVoiceTipDismissed, setIsVoiceTipDismissed] = useState<boolean>(false);
+
+  const homeMetrics = useMemo(() => {
+    const today = new Date();
+    const sevenDaysAgo = new Date();
+    sevenDaysAgo.setDate(today.getDate() - 7);
+
+    let weeklyVolume = 0;
+    const completedWorkouts = workoutHistory.filter((w) => Boolean(w.completedAt));
+    for (const w of completedWorkouts) {
+      const wDate = new Date(w.startedAt);
+      if (wDate >= sevenDaysAgo) {
+        for (const ex of w.exercises) {
+          for (const s of ex.sets) {
+            if (s.isCompleted) {
+              weeklyVolume += (s.weight || 0) * (s.reps || 0);
+            }
+          }
+        }
+      }
+    }
+
+    const weeklyVolumeFormatted =
+      weeklyVolume >= 10000
+        ? `${(weeklyVolume / 1000).toFixed(1)}k`
+        : weeklyVolume > 0
+        ? Math.round(weeklyVolume).toLocaleString()
+        : '0';
+
+    const workoutDayKeys = new Set(
+      workoutHistory.map((w) => getLocalDateKey(new Date(w.startedAt)))
+    );
+    let streakDays = 0;
+    const checkDate = new Date();
+    if (!workoutDayKeys.has(getLocalDateKey(checkDate))) {
+      checkDate.setDate(checkDate.getDate() - 1);
+    }
+    while (workoutDayKeys.has(getLocalDateKey(checkDate))) {
+      streakDays++;
+      checkDate.setDate(checkDate.getDate() - 1);
+    }
+
+    const todayFocus = dailyRecommendation?.title || availablePlans[0]?.title || 'Push Day • Upper Body';
+
+    return {
+      todayFocus,
+      streakDays: streakDays > 0 ? streakDays : workoutHistory.length > 0 ? 1 : 0,
+      weeklyVolumeFormatted,
+      totalWorkoutsCount: workoutHistory.length,
+    };
+  }, [workoutHistory, dailyRecommendation, availablePlans]);
 
   const refreshRecommendations = useCallback((unit: WeightUnit) => {
     getWorkoutHistory().then((res) => {
@@ -131,6 +192,10 @@ export default function WorkoutPage() {
     const unit = profile.preferredUnit || 'kg';
     setPreferredUnit(unit);
     refreshRecommendations(unit);
+
+    getWorkoutPlans().then((res) => {
+      setAvailablePlans(res.plans);
+    });
 
     syncAndLoadAllAliases().then((aliases) => {
       setCustomAliases(aliases);
@@ -434,7 +499,6 @@ export default function WorkoutPage() {
       };
       updateWorkout(updated);
       updateSelectedExerciseId(targetExerciseId);
-      setShowRestTimer(true);
       playSoundChime();
 
       const setsCountLabel = newSetsToAdd.length > 1 ? `${newSetsToAdd.length} sets` : `Set #${targetSetNum}`;
@@ -548,7 +612,6 @@ export default function WorkoutPage() {
 
       updateWorkout({ ...liveWorkout, exercises: updatedExercises });
       updateSelectedExerciseId(targetExerciseId);
-      setShowRestTimer(true);
       playSoundChime();
     },
     [setTimerSeconds, updateWorkout, updateSelectedExerciseId, playSoundChime]
@@ -915,6 +978,33 @@ export default function WorkoutPage() {
       }
 
       // 2. Control Commands
+      if (command.type === 'START_WORKOUT') {
+        const title = command.title || 'Voice Workout';
+        const newW = handleStartWorkout(title);
+        currentWorkout = newW;
+        if (!isListeningDesired) {
+          prewarmGymNoiseReduction().catch(() => {});
+          startContinuousListening();
+        }
+        setSaveStatus({
+          type: 'success',
+          message: `Started "${title}". Listening hands-free.`,
+        });
+        return;
+      }
+
+      if (command.type === 'START_REST') {
+        setShowRestTimer(true);
+        playSoundChime();
+        setSaveStatus({
+          type: 'info',
+          message: command.seconds
+            ? `Rest timer started for ${command.seconds}s.`
+            : 'Rest timer activated. Tap timer to adjust.',
+        });
+        return;
+      }
+
       if (command.type === 'START_SET') {
         const currentW = activeWorkoutRef.current || currentWorkout;
         if (!currentW || currentW.exercises.length === 0) {
@@ -1052,14 +1142,13 @@ export default function WorkoutPage() {
             updateWorkout({ ...currentW, exercises: updatedExercises });
           }
 
-          setShowRestTimer(true);
           playSoundChime();
           setAmbiguousCommand(null);
           setSaveStatus({
             type: 'success',
             message: finishedDuration
-              ? `Set completed in ${formatSetDuration(finishedDuration)}! Rest timer started.`
-              : 'Set completed! Rest timer started.',
+              ? `Set completed in ${formatSetDuration(finishedDuration)}! Say "rest" to start timer.`
+              : 'Set completed! Say "rest" to start timer.',
           });
           break;
         }
@@ -1222,7 +1311,6 @@ export default function WorkoutPage() {
           };
           updateWorkout(updated);
           updateSelectedExerciseId(targetExerciseId);
-          setShowRestTimer(true);
           playSoundChime();
           setAmbiguousCommand(null);
           break;
@@ -1291,7 +1379,6 @@ export default function WorkoutPage() {
             const updated = { ...liveWorkout, exercises: updatedExercises };
             updateWorkout(updated);
             updateSelectedExerciseId(targetId);
-            setShowRestTimer(true);
             playSoundChime();
             setAmbiguousCommand(null);
 
@@ -1338,7 +1425,6 @@ export default function WorkoutPage() {
             };
             updateWorkout(updated);
             updateSelectedExerciseId(targetId);
-            setShowRestTimer(true);
             playSoundChime();
             setAmbiguousCommand(null);
 
@@ -1662,13 +1748,13 @@ export default function WorkoutPage() {
   const getStatusDisplay = (st: ContinuousSpeechStatus) => {
     switch (st) {
       case 'listening':
-        return { label: 'Listening Continuously', color: 'bg-lime-500/20 text-lime-400 border-lime-500/40' };
+        return { label: 'Listening Continuously', color: 'bg-zinc-800 text-white border-zinc-700' };
       case 'processing':
-        return { label: 'Processing Speech...', color: 'bg-amber-500/20 text-amber-300 border-amber-500/40' };
+        return { label: 'Processing Speech...', color: 'bg-zinc-800 text-zinc-200 border-zinc-700' };
       case 'reconnecting':
-        return { label: 'Reconnecting Mic...', color: 'bg-blue-500/20 text-blue-300 border-blue-500/40 animate-pulse' };
+        return { label: 'Reconnecting Mic...', color: 'bg-zinc-800 text-zinc-300 border-zinc-700 animate-pulse' };
       case 'error':
-        return { label: 'Microphone Error', color: 'bg-rose-500/20 text-rose-300 border-rose-500/40' };
+        return { label: 'Microphone Error', color: 'bg-rose-950/60 text-rose-300 border-rose-800' };
       case 'unsupported':
         return { label: 'Speech API Unsupported', color: 'bg-zinc-800 text-zinc-400 border-zinc-700' };
       default:
@@ -1701,18 +1787,18 @@ export default function WorkoutPage() {
         <div
           className={`p-3.5 rounded-2xl flex items-start gap-2.5 text-xs font-semibold animate-in fade-in ${
             saveStatus.type === 'success'
-              ? 'bg-lime-950/90 border border-lime-500/50 text-lime-300'
+              ? 'bg-zinc-900 border border-zinc-700 text-zinc-100 shadow-md'
               : saveStatus.type === 'error'
               ? 'bg-rose-950/90 border border-rose-500/50 text-rose-300'
               : 'bg-zinc-900 border border-zinc-700 text-zinc-200'
           }`}
         >
           {saveStatus.type === 'success' ? (
-            <CheckCircle2 className="h-4 w-4 text-lime-400 shrink-0 mt-0.5" />
+            <CheckCircle2 className="h-4 w-4 text-white shrink-0 mt-0.5" />
           ) : saveStatus.type === 'error' ? (
             <AlertTriangle className="h-4 w-4 text-rose-400 shrink-0 mt-0.5" />
           ) : (
-            <Sparkles className="h-4 w-4 text-lime-400 shrink-0 mt-0.5" />
+            <Sparkles className="h-4 w-4 text-zinc-300 shrink-0 mt-0.5" />
           )}
           <div className="flex-1">
             <p>{saveStatus.message}</p>
@@ -1726,69 +1812,303 @@ export default function WorkoutPage() {
         </div>
       )}
 
-      {/* VIEW A: NO ACTIVE WORKOUT -> DASHBOARD */}
+      {/* VIEW A: NO ACTIVE WORKOUT -> STITCH OBSIDIAN HOME SCREEN */}
       {!activeWorkout && (
-        <div className="space-y-6 pt-2">
-          {/* Athlete Header */}
-          <div className="flex items-center justify-between p-4 rounded-3xl bg-zinc-900/80 border border-zinc-800">
-            <div>
-              <span className="text-[10px] font-extrabold uppercase tracking-widest text-lime-400 block mb-0.5">
-                ATHLETE SESSION
-              </span>
-              <h2 className="text-xl font-black text-white tracking-tight">
-                {userEmail ? userEmail.split('@')[0] : 'Gym Tracker'}
-              </h2>
-            </div>
-            <div className="text-right">
-              <span className="text-[11px] text-zinc-400 block">Unit</span>
-              <span className="text-xs font-bold text-lime-400 uppercase">{preferredUnit}</span>
-            </div>
-          </div>
-
-          {/* Primary Action Card: Continuous Voice Start */}
-          <div className="p-6 rounded-3xl bg-gradient-to-b from-zinc-900 to-zinc-950 border border-lime-400/30 text-center shadow-[0_0_30px_rgba(163,230,53,0.1)] space-y-4">
-            <button
-              onClick={toggleContinuousListening}
-              className="w-20 h-20 rounded-3xl bg-lime-400/10 border-2 border-lime-400/40 text-lime-400 mx-auto flex items-center justify-center shadow-[0_0_25px_rgba(163,230,53,0.3)] hover:scale-105 active:scale-95 transition cursor-pointer"
-            >
-              <Mic className="h-10 w-10 text-lime-400 animate-pulse" />
-            </button>
-
-            <div>
-              <h1 className="text-2xl font-black tracking-tight text-white">
-                Continuous Voice Tracking
-              </h1>
-              <p className="text-xs text-zinc-400 mt-1 max-w-xs mx-auto">
-                Turn on the mic once and leave it running. Speak exercises and sets anytime during your workout without tapping again.
-              </p>
+        <div className="space-y-6 pt-1 select-none">
+          {/* Top Motivation & Focus Banner */}
+          <div className="relative overflow-hidden rounded-2xl bg-zinc-950 border border-zinc-800 p-4 shadow-md flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-full bg-zinc-900 border border-zinc-800 flex items-center justify-center text-white">
+                <Zap className="h-5 w-5 text-white fill-white" />
+              </div>
+              <div>
+                <p className="text-[10px] uppercase tracking-wider text-zinc-400 font-bold">
+                  Today&apos;s Focus
+                </p>
+                <p className="text-sm font-extrabold text-white leading-tight">
+                  {homeMetrics.todayFocus || 'Push Day • Upper Body'}
+                </p>
+              </div>
             </div>
 
-            <div className="space-y-2 pt-2">
+            <div className="flex flex-col items-end">
               <button
                 onClick={toggleContinuousListening}
-                className="w-full py-4 rounded-2xl bg-gradient-to-r from-lime-400 to-lime-300 hover:from-lime-300 hover:to-lime-200 text-black font-black text-base flex items-center justify-center gap-2 shadow-[0_0_25px_rgba(163,230,53,0.35)] active:scale-95 transition cursor-pointer"
+                className={`inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-full border transition-all cursor-pointer ${
+                  isListeningDesired
+                    ? 'bg-zinc-800 text-white border-zinc-600 shadow-[0_0_12px_rgba(255,255,255,0.15)]'
+                    : 'bg-zinc-900 text-zinc-400 hover:text-white border-zinc-800'
+                }`}
+                id="mic-status-toggle"
               >
-                <Radio className="h-5 w-5 text-black" />
-                <span>START CONTINUOUS LISTENING</span>
-              </button>
-
-              <button
-                onClick={() => {
-                  handleStartWorkout('Full Body Workout');
-                  if (!isListeningDesired) {
-                    prewarmGymNoiseReduction().catch(() => {});
-                    startContinuousListening();
-                  }
-                }}
-                className="w-full py-3 rounded-2xl bg-zinc-900 hover:bg-zinc-800 text-zinc-300 border border-zinc-800 text-xs font-bold flex items-center justify-center gap-1.5 transition cursor-pointer"
-              >
-                <Play className="h-4 w-4" />
-                <span>Start Empty Workout</span>
+                <span
+                  className={`w-2 h-2 rounded-full ${
+                    isListeningDesired ? 'bg-white animate-ping' : 'bg-zinc-500'
+                  }`}
+                />
+                <span className="font-bold">
+                  {isListeningDesired ? 'Listening' : 'Mic Ready'}
+                </span>
               </button>
             </div>
           </div>
 
-          {/* Daily Recommendation Section ("Your workout for today") */}
+          {/* Hero Focal Point: Giant Start Workout Circular Button */}
+          <div className="relative flex flex-col items-center justify-center py-5 my-1">
+            {/* Pulsating Voice Waveform Aura Rings */}
+            <div className="absolute w-72 h-72 rounded-full border border-zinc-800/80 animate-pulse pointer-events-none" />
+            <div className="absolute w-60 h-60 rounded-full border border-zinc-700/40 pointer-events-none" />
+
+            {/* SVG Audio Waveform Ring */}
+            <svg
+              className="absolute w-64 h-64 pointer-events-none transform -rotate-90"
+              viewBox="0 0 256 256"
+            >
+              <circle
+                className="text-zinc-900"
+                cx="128"
+                cy="128"
+                fill="none"
+                r="118"
+                stroke="currentColor"
+                strokeDasharray="3 6"
+                strokeWidth="4"
+              />
+              <circle
+                className="text-zinc-600"
+                cx="128"
+                cy="128"
+                fill="none"
+                opacity="0.8"
+                r="118"
+                stroke="currentColor"
+                strokeDasharray="14 18"
+                strokeDashoffset="35"
+                strokeWidth="4"
+              />
+            </svg>
+
+            {/* Massive Circular Interactive Core (Solid Black/White Theme) */}
+            <button
+              onClick={() => {
+                handleStartWorkout('Voice Workout');
+                if (!isListeningDesired) {
+                  prewarmGymNoiseReduction().catch(() => {});
+                  startContinuousListening();
+                }
+              }}
+              className="relative z-10 w-52 h-52 rounded-full bg-zinc-950 border-2 border-zinc-700 text-white shadow-[0_0_40px_rgba(255,255,255,0.12)] active:scale-95 hover:border-white hover:shadow-[0_0_55px_rgba(255,255,255,0.22)] transition-all duration-200 flex flex-col items-center justify-center p-3 text-center cursor-pointer group overflow-hidden"
+              id="start-workout-btn"
+            >
+              <Play
+                className="h-10 w-10 mb-1 text-white fill-white group-hover:scale-110 transition-transform select-none"
+              />
+              <span className="text-xl font-black uppercase tracking-tight leading-tight text-white select-none text-center">
+                START<br />WORKOUT
+              </span>
+              <span className="text-[10px] font-bold text-zinc-400 tracking-widest mt-1 bg-zinc-900 px-2.5 py-0.5 rounded-full select-none border border-zinc-800">
+                HANDS-FREE
+              </span>
+            </button>
+
+            {/* Voice Directive Micro-copy */}
+            <div
+              onClick={() => {
+                if (!isListeningDesired) {
+                  prewarmGymNoiseReduction().catch(() => {});
+                  startContinuousListening();
+                }
+              }}
+              className="mt-5 flex items-center gap-2 px-4 py-1.5 rounded-full bg-zinc-900 border border-zinc-800 text-zinc-300 hover:text-white cursor-pointer hover:bg-zinc-850 active:scale-95 transition-all shadow-sm"
+              id="voice-directive-pill"
+            >
+              <Mic className="h-4 w-4 text-zinc-300" />
+              <span className="text-xs font-semibold">
+                Tap or say <span className="text-white font-bold">&ldquo;Start Workout&rdquo;</span>
+              </span>
+            </div>
+          </div>
+
+          {/* Voice Coaching Delight Card */}
+          {!isVoiceTipDismissed && (
+            <div className="relative overflow-hidden rounded-2xl bg-zinc-950 border border-zinc-800 p-4 shadow-md transition-all">
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex items-start gap-3 flex-1 min-w-0">
+                  <div className="w-9 h-9 rounded-full bg-zinc-900 border border-zinc-800 flex items-center justify-center flex-shrink-0 text-white mt-0.5">
+                    <Radio className="h-4 w-4 text-white" />
+                  </div>
+                  <div className="flex flex-col min-w-0 pr-2">
+                    <div className="flex items-center gap-2">
+                      <span className="text-[10px] font-extrabold uppercase tracking-wider text-zinc-400">
+                        Quick Voice Tip
+                      </span>
+                      <span className="px-1.5 py-0.5 rounded text-[9px] font-black bg-zinc-900 text-zinc-300 border border-zinc-800">
+                        HANDS-FREE
+                      </span>
+                    </div>
+                    <p className="text-xs text-zinc-200 mt-1 leading-snug">
+                      {voiceTipIndex === 0 && (
+                        <>Speak between sets: <span className="text-white font-bold italic">&ldquo;Bench Press, 185 lbs for 8 reps&rdquo;</span> or simply <span className="text-white font-bold italic">&ldquo;Add 5 lbs&rdquo;</span>.</>
+                      )}
+                      {voiceTipIndex === 1 && (
+                        <>Rest timer is optional! Say <span className="text-white font-bold italic">&ldquo;Rest&rdquo;</span> or <span className="text-white font-bold italic">&ldquo;Rest timer turn on&rdquo;</span> whenever you want a timer.</>
+                      )}
+                      {voiceTipIndex === 2 && (
+                        <>Say <span className="text-white font-bold italic">&ldquo;Next exercise Incline Dumbbell Press&rdquo;</span> to switch movement focus without touching your phone.</>
+                      )}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-1 flex-shrink-0">
+                  <button
+                    onClick={() => setVoiceTipIndex((prev) => (prev + 1) % 3)}
+                    aria-label="Next voice tip"
+                    className="w-7 h-7 rounded-full flex items-center justify-center text-zinc-400 hover:text-white hover:bg-zinc-850 active:scale-90 transition-all cursor-pointer"
+                    title="Next tip"
+                  >
+                    <RefreshCw className="h-3.5 w-3.5" />
+                  </button>
+                  <button
+                    onClick={() => setIsVoiceTipDismissed(true)}
+                    aria-label="Dismiss tip"
+                    className="w-7 h-7 rounded-full flex items-center justify-center text-zinc-500 hover:text-white hover:bg-zinc-850 active:scale-90 transition-all cursor-pointer"
+                    title="Dismiss tip"
+                  >
+                    ×
+                  </button>
+                </div>
+              </div>
+
+              <div className="mt-2.5 pt-2 flex items-center justify-between border-t border-zinc-800 text-[11px] text-zinc-400">
+                <span className="flex items-center gap-1">
+                  <Sparkles className="h-3 w-3 text-zinc-400" /> Cycle tips to learn hands-free controls
+                </span>
+                <span className="font-bold text-zinc-300">{voiceTipIndex + 1}/3</span>
+              </div>
+            </div>
+          )}
+
+          {/* Quick Stats Weekly Snapshot */}
+          <div className="flex flex-col gap-2">
+            <div className="flex items-center justify-between px-1">
+              <span className="text-xs font-bold uppercase tracking-wider text-zinc-400">
+                Weekly Snapshot
+              </span>
+              <span className="text-xs font-bold text-white flex items-center gap-1">
+                Active Cycle
+              </span>
+            </div>
+            <div className="grid grid-cols-3 gap-2.5">
+              {/* Streak */}
+              <div className="rounded-2xl bg-zinc-950 border border-zinc-800 p-3.5 flex flex-col justify-between shadow-sm">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-semibold text-zinc-400">Streak</span>
+                  <span className="text-sm leading-none">🔥</span>
+                </div>
+                <div className="mt-2">
+                  <span className="text-xl font-black text-white tracking-tight tabular-nums">
+                    {homeMetrics.streakDays}
+                  </span>
+                  <span className="text-xs text-zinc-400 ml-1">Days</span>
+                </div>
+              </div>
+
+              {/* Weekly Volume */}
+              <div className="rounded-2xl bg-zinc-950 border border-zinc-800 p-3.5 flex flex-col justify-between shadow-sm">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-semibold text-zinc-400">Volume</span>
+                  <Dumbbell className="h-4 w-4 text-zinc-400" />
+                </div>
+                <div className="mt-2">
+                  <span className="text-xl font-black text-white tracking-tight tabular-nums">
+                    {homeMetrics.weeklyVolumeFormatted}
+                  </span>
+                  <span className="text-xs text-zinc-400 ml-1">{preferredUnit}</span>
+                </div>
+              </div>
+
+              {/* Total Workouts */}
+              <div className="rounded-2xl bg-zinc-950 border border-zinc-800 p-3.5 flex flex-col justify-between shadow-sm">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-semibold text-zinc-400">Logged</span>
+                  <Trophy className="h-4 w-4 text-zinc-400" />
+                </div>
+                <div className="mt-2">
+                  <span className="text-xl font-black text-white tracking-tight tabular-nums">
+                    {homeMetrics.totalWorkoutsCount}
+                  </span>
+                  <span className="text-xs text-zinc-400 ml-1">Total</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Quick Start Routines Section (Horizontal Carousel from Stitch) */}
+          <div className="flex flex-col gap-2.5">
+            <div className="flex items-center justify-between px-1">
+              <span className="text-xs font-bold uppercase tracking-wider text-zinc-400">
+                Scheduled & Quick Routines
+              </span>
+              <Link href="/plan" className="text-xs font-bold text-zinc-300 hover:text-white underline">
+                View All Plans
+              </Link>
+            </div>
+
+            <div className="flex overflow-x-auto gap-3 pb-2 -mx-4 px-4 scrollbar-none snap-x">
+              {availablePlans.length > 0 ? (
+                availablePlans.slice(0, 4).map((plan) => {
+                  const totalSets = plan.exercises.reduce((acc, e) => acc + (e.targetSets || 0), 0);
+                  return (
+                    <div
+                      key={plan.id}
+                      className="min-w-[260px] max-w-[280px] rounded-2xl bg-zinc-950 border border-zinc-800 p-4 flex flex-col justify-between shadow-md snap-start flex-shrink-0"
+                    >
+                      <div>
+                        <div className="flex items-center justify-between mb-1.5">
+                          <span className="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-full bg-zinc-900 border border-zinc-800 text-zinc-300">
+                            {plan.scheduledDay || 'Anytime'}
+                          </span>
+                          <span className="text-[11px] text-zinc-400 font-semibold">
+                            {totalSets} sets
+                          </span>
+                        </div>
+                        <h4 className="text-sm font-extrabold text-white truncate mb-1">
+                          {plan.title}
+                        </h4>
+                        <p className="text-[11px] text-zinc-400 line-clamp-2">
+                          {plan.exercises.map((e) => e.exerciseName).join(', ')}
+                        </p>
+                      </div>
+
+                      <button
+                        onClick={() => {
+                          const w = instantiateWorkoutFromPlan(plan);
+                          saveActiveWorkout(w);
+                          setActiveWorkout(w);
+                          if (w.exercises.length > 0) setSelectedExerciseId(w.exercises[0].id);
+                          if (!isListeningDesired) {
+                            prewarmGymNoiseReduction().catch(() => {});
+                            startContinuousListening();
+                          }
+                        }}
+                        className="mt-3 w-full py-2.5 rounded-xl bg-white hover:bg-zinc-200 text-black font-extrabold text-xs flex items-center justify-center gap-1.5 shadow-sm active:scale-95 transition cursor-pointer"
+                      >
+                        <Play className="h-3.5 w-3.5 fill-black" />
+                        <span>Start Routine</span>
+                      </button>
+                    </div>
+                  );
+                })
+              ) : (
+                <div className="p-4 rounded-2xl bg-zinc-950 border border-zinc-800 text-xs text-zinc-400">
+                  Loading routines...
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Daily Recommendation Card (if active) */}
           {dailyRecommendation && !isRecommendationDismissed && (
             <DailyRecommendationCard
               recommendation={dailyRecommendation}
@@ -1810,87 +2130,64 @@ export default function WorkoutPage() {
             />
           )}
 
-          {/* Quick Workout Splits */}
-          <div className="space-y-2.5">
-            <span className="text-xs font-extrabold uppercase tracking-wider text-zinc-400 px-1">
-              Quick Workout Splits
-            </span>
-            <div className="grid grid-cols-2 gap-2.5">
-              {[
-                { name: 'Push Day', desc: 'Chest, Shoulders, Triceps' },
-                { name: 'Pull Day', desc: 'Back, Biceps, Rear Delts' },
-                { name: 'Legs & Core', desc: 'Quads, Hamstrings, Calves' },
-                { name: 'Upper Power', desc: 'Heavy Compound Presses' },
-              ].map((split) => (
-                <button
-                  key={split.name}
-                  onClick={() => {
-                    handleStartWorkout(split.name);
-                    if (!isListeningDesired) {
-                      prewarmGymNoiseReduction().catch(() => {});
-                      startContinuousListening();
-                    }
-                  }}
-                  className="p-3.5 rounded-2xl bg-zinc-900 border border-zinc-800 hover:border-lime-400/50 text-left transition group active:scale-95 cursor-pointer"
-                >
-                  <div className="flex items-center justify-between mb-1">
-                    <span className="font-bold text-sm text-white group-hover:text-lime-400 transition">
-                      {split.name}
-                    </span>
-                    <ChevronRight className="h-3.5 w-3.5 text-zinc-500 group-hover:text-lime-400" />
-                  </div>
-                  <span className="text-[10px] text-zinc-400 block truncate">
-                    {split.desc}
-                  </span>
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Repeat Last Workout */}
+          {/* Recent Activity Snippet */}
           {lastWorkout && (
-            <div className="p-4 rounded-2xl bg-zinc-900/60 border border-zinc-800 space-y-3">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-zinc-300 flex items-center gap-1.5">
-                  <Flame className="h-4 w-4 text-lime-400" />
-                  Last Workout: {lastWorkout.title}
+            <div className="flex flex-col gap-2">
+              <div className="flex items-center justify-between px-1">
+                <span className="text-xs font-bold uppercase tracking-wider text-zinc-400">
+                  Recent Activity
                 </span>
-                <span className="text-[10px] text-zinc-500">
-                  {new Date(lastWorkout.startedAt).toLocaleDateString()}
-                </span>
+                <Link
+                  href="/history"
+                  className="text-xs font-bold text-zinc-400 hover:text-white"
+                >
+                  Full History &rarr;
+                </Link>
               </div>
-              <p className="text-xs text-zinc-400">
-                {lastWorkout.exercises.length} exercises • {lastWorkout.exercises.map((e) => e.exerciseName).join(', ')}
-              </p>
-              <button
-                onClick={() => {
-                  const clonedExercises: WorkoutExercise[] = lastWorkout.exercises.map((ex) => ({
-                    id: typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `ex_${Date.now()}_${Math.random()}`,
-                    exerciseName: ex.exerciseName,
-                    sets: ex.sets.map((s, idx) => ({
-                      id: typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `s_${Date.now()}_${idx}`,
-                      setNumber: idx + 1,
-                      weight: s.weight,
-                      reps: s.reps,
-                      unit: s.unit || preferredUnit,
-                      isCompleted: false,
-                    })),
-                  }));
 
-                  const newW = {
-                    id: typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `w_${Date.now()}`,
-                    title: lastWorkout.title,
-                    startedAt: new Date().toISOString(),
-                    exercises: clonedExercises,
-                  };
-                  updateWorkout(newW);
-                  if (clonedExercises.length > 0) updateSelectedExerciseId(clonedExercises[0].id);
-                }}
-                className="w-full py-2.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-lime-400 text-xs font-bold border border-zinc-700 flex items-center justify-center gap-1.5 transition cursor-pointer"
-              >
-                <RotateCcw className="h-3.5 w-3.5" />
-                Repeat This Workout
-              </button>
+              <div className="p-4 rounded-2xl bg-zinc-950 border border-zinc-800 flex items-center justify-between shadow-sm">
+                <div>
+                  <span className="text-[10px] text-zinc-500 block">
+                    {new Date(lastWorkout.startedAt).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}
+                  </span>
+                  <h4 className="text-sm font-bold text-white mt-0.5">
+                    {lastWorkout.title}
+                  </h4>
+                  <p className="text-xs text-zinc-400 mt-0.5">
+                    {lastWorkout.exercises.length} movements • {lastWorkout.exercises.reduce((s, e) => s + e.sets.length, 0)} sets completed
+                  </p>
+                </div>
+
+                <button
+                  onClick={() => {
+                    const clonedExercises: WorkoutExercise[] = lastWorkout.exercises.map((ex) => ({
+                      id: typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `ex_${Date.now()}_${Math.random()}`,
+                      exerciseName: ex.exerciseName,
+                      sets: ex.sets.map((s, idx) => ({
+                        id: typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `s_${Date.now()}_${idx}`,
+                        setNumber: idx + 1,
+                        weight: s.weight,
+                        reps: s.reps,
+                        unit: s.unit || preferredUnit,
+                        isCompleted: false,
+                      })),
+                    }));
+
+                    const newW = {
+                      id: typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `w_${Date.now()}`,
+                      title: lastWorkout.title,
+                      startedAt: new Date().toISOString(),
+                      exercises: clonedExercises,
+                    };
+                    updateWorkout(newW);
+                    if (clonedExercises.length > 0) updateSelectedExerciseId(clonedExercises[0].id);
+                  }}
+                  className="px-3.5 py-2 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-xs font-bold text-white flex items-center gap-1.5 transition cursor-pointer"
+                >
+                  <RotateCcw className="h-3.5 w-3.5" />
+                  <span>Repeat</span>
+                </button>
+              </div>
             </div>
           )}
         </div>
@@ -1900,23 +2197,23 @@ export default function WorkoutPage() {
       {activeWorkout && (
         <div className="space-y-4">
           {/* Header Bar */}
-          <div className="sticky top-14 z-30 -mx-4 px-4 py-3 bg-[#09090b]/95 backdrop-blur-md border-b border-zinc-800 flex items-center justify-between">
+          <div className="sticky top-14 z-30 -mx-4 px-4 py-3 bg-black/95 backdrop-blur-md border-b border-zinc-800 flex items-center justify-between">
             <div className="flex-1 mr-2">
               <input
                 type="text"
                 value={activeWorkout.title}
                 onChange={(e) => updateWorkout({ ...activeWorkout, title: e.target.value })}
-                className="font-black text-lg text-white bg-transparent border-b border-transparent hover:border-zinc-700 focus:border-lime-400 focus:outline-none w-full"
+                className="font-black text-lg text-white bg-transparent border-b border-transparent hover:border-zinc-700 focus:border-white focus:outline-none w-full"
                 placeholder="Workout Name"
               />
               <div className="flex items-center gap-2.5 text-xs text-zinc-400 mt-0.5">
-                <span className="font-mono font-bold text-lime-400 flex items-center gap-1" title="Workout Duration (continuous)">
-                  <span className="inline-block w-2 h-2 rounded-full bg-lime-400 animate-pulse" />
+                <span className="font-mono font-bold text-white flex items-center gap-1" title="Workout Duration (continuous)">
+                  <span className="inline-block w-2 h-2 rounded-full bg-white animate-pulse" />
                   {formatDuration(elapsedSeconds)}
                 </span>
                 <span>•</span>
-                <span className="font-mono font-bold text-amber-300 flex items-center gap-1" title="Active Set Duration (Say 'Set done' to finish)">
-                  <Timer className="h-3 w-3 text-amber-400" />
+                <span className="font-mono font-bold text-zinc-300 flex items-center gap-1" title="Active Set Duration (Say 'Set done' to finish)">
+                  <Timer className="h-3 w-3 text-zinc-400" />
                   Set: {formatDuration(setTimerSeconds)}
                 </span>
                 <span>•</span>
@@ -1924,8 +2221,8 @@ export default function WorkoutPage() {
                 <span>•</span>
                 <span>{totalVolume} {preferredUnit}</span>
                 <span>•</span>
-                <span className="font-semibold text-rose-400 flex items-center gap-1" title="Estimated Calorie Burn">
-                  <Flame className="h-3 w-3 text-rose-400" />
+                <span className="font-semibold text-zinc-300 flex items-center gap-1" title="Estimated Calorie Burn">
+                  <Flame className="h-3 w-3 text-zinc-400" />
                   ~{calculateEstimatedCalories(elapsedSeconds, totalVolume, totalSetsCount)} kcal
                 </span>
               </div>
@@ -1937,17 +2234,17 @@ export default function WorkoutPage() {
                 onClick={() => setShowRestTimer(!showRestTimer)}
                 className={`p-2.5 rounded-xl border text-xs font-bold transition flex items-center gap-1 cursor-pointer ${
                   showRestTimer
-                    ? 'bg-lime-400 text-black border-lime-400'
-                    : 'bg-zinc-900 text-zinc-300 border-zinc-700 hover:bg-zinc-800'
+                    ? 'bg-white text-black border-white shadow-sm'
+                    : 'bg-zinc-900 text-zinc-300 border-zinc-750 hover:bg-zinc-800'
                 }`}
-                title="Toggle Rest Timer"
+                title="Toggle Rest Timer (or say 'Rest')"
               >
                 <Timer className="h-4 w-4" />
               </button>
 
               <button
                 onClick={() => setShowFinishConfirm(true)}
-                className="px-3.5 py-2 rounded-xl bg-lime-400 hover:bg-lime-300 text-black font-black text-xs flex items-center gap-1.5 shadow-[0_0_15px_rgba(163,230,53,0.3)] active:scale-95 transition cursor-pointer"
+                className="px-3.5 py-2 rounded-xl bg-white hover:bg-zinc-200 text-black font-black text-xs flex items-center gap-1.5 shadow-[0_0_15px_rgba(255,255,255,0.2)] active:scale-95 transition cursor-pointer"
               >
                 <Check className="h-4 w-4 stroke-[3]" />
                 <span>Finish</span>
@@ -1969,7 +2266,7 @@ export default function WorkoutPage() {
                 className={`py-2.5 px-4 rounded-2xl font-black text-xs flex items-center gap-2 transition active:scale-95 cursor-pointer shadow-lg ${
                   isListeningDesired
                     ? 'bg-rose-950/80 border border-rose-500/60 text-rose-300 hover:bg-rose-900/80'
-                    : 'bg-lime-400 hover:bg-lime-300 text-black shadow-lime-400/20'
+                    : 'bg-white hover:bg-zinc-200 text-black shadow-sm'
                 }`}
               >
                 {isListeningDesired ? (
@@ -1990,7 +2287,7 @@ export default function WorkoutPage() {
                 <span
                   className={`w-2 h-2 rounded-full ${
                     speechStatus === 'listening'
-                      ? 'bg-lime-400 animate-ping'
+                      ? 'bg-white animate-ping'
                       : speechStatus === 'processing'
                       ? 'bg-amber-400 animate-pulse'
                       : speechStatus === 'reconnecting'
@@ -2014,8 +2311,8 @@ export default function WorkoutPage() {
               <div className="flex items-center gap-2">
                 <span className="text-[10px] uppercase font-extrabold text-zinc-500">Active Focus:</span>
                 {activeExContext.exercise ? (
-                  <span className="font-extrabold text-white flex items-center gap-1 text-lime-400">
-                    <Dumbbell className="h-3.5 w-3.5" />
+                  <span className="font-extrabold text-white flex items-center gap-1">
+                    <Dumbbell className="h-3.5 w-3.5 text-zinc-400" />
                     {activeExContext.exercise.exerciseName}
                     {activeExContext.lastWeight > 0 && (
                       <span className="text-zinc-400 font-normal ml-1">
@@ -2032,15 +2329,15 @@ export default function WorkoutPage() {
 
             {/* Real-time speech stream */}
             {!isListeningDesired ? (
-              <div className="p-3 rounded-2xl bg-amber-950/30 border border-amber-500/30 flex items-center justify-between text-xs text-amber-200">
+              <div className="p-3 rounded-2xl bg-zinc-950 border border-zinc-800 flex items-center justify-between text-xs text-zinc-300">
                 <div className="flex items-center gap-2">
-                  <MicOff className="h-4 w-4 text-amber-400 shrink-0" />
+                  <MicOff className="h-4 w-4 text-zinc-400 shrink-0" />
                   <span>Microphone is paused. Tap <strong>START LISTENING</strong> to log sets by voice.</span>
                 </div>
                 <button
                   type="button"
                   onClick={toggleContinuousListening}
-                  className="px-3 py-1.5 rounded-xl bg-lime-400 text-black font-black text-xs hover:bg-lime-300 transition cursor-pointer shrink-0 ml-2 shadow-[0_0_10px_rgba(163,230,53,0.3)]"
+                  className="px-3 py-1.5 rounded-xl bg-white text-black font-black text-xs hover:bg-zinc-200 transition cursor-pointer shrink-0 ml-2 shadow-sm"
                 >
                   Turn On
                 </button>
@@ -2050,7 +2347,7 @@ export default function WorkoutPage() {
                 <p className="text-xs text-zinc-300 font-mono">
                   {interimTranscript ? (
                     <span>
-                      Hearing: <span className="text-lime-400 font-bold">“{interimTranscript}”</span>
+                      Hearing: <span className="text-white font-bold">“{interimTranscript}”</span>
                     </span>
                   ) : lastFinalTranscript ? (
                     <span className="text-zinc-400">
@@ -2067,15 +2364,15 @@ export default function WorkoutPage() {
 
             {/* EXERCISE CONFIRMATION CARD (When exercise is unknown or needs confirmation) */}
             {pendingConfirmation && (
-              <div className="p-4 rounded-3xl bg-zinc-900 border-2 border-lime-400 shadow-[0_0_30px_rgba(163,230,53,0.15)] space-y-3 animate-in fade-in zoom-in-95">
+              <div className="p-4 rounded-3xl bg-zinc-900 border-2 border-zinc-600 shadow-[0_0_30px_rgba(255,255,255,0.08)] space-y-3 animate-in fade-in zoom-in-95">
                 <div className="flex items-start justify-between">
                   <div className="space-y-1">
-                    <div className="flex items-center gap-1.5 text-xs font-extrabold text-lime-400 uppercase tracking-wider">
-                      <HelpCircle className="h-4 w-4 text-lime-400 animate-pulse" />
+                    <div className="flex items-center gap-1.5 text-xs font-extrabold text-white uppercase tracking-wider">
+                      <HelpCircle className="h-4 w-4 text-white animate-pulse" />
                       <span>Confirm Exercise</span>
                     </div>
                     <h3 className="text-xl font-black text-white">
-                      Did you say <span className="text-lime-400 underline decoration-lime-400/50">{pendingConfirmation.suggestedExercise}</span>?
+                      Did you say <span className="text-white underline decoration-zinc-400">{pendingConfirmation.suggestedExercise}</span>?
                     </h3>
                     <p className="text-xs text-zinc-400">
                       Heard: <span className="text-zinc-200 italic">“{pendingConfirmation.spokenPhrase}”</span>
@@ -2086,7 +2383,7 @@ export default function WorkoutPage() {
                       )}
                     </p>
                   </div>
-                  <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-lime-400/10 text-lime-400 border border-lime-400/30">
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-zinc-800 text-zinc-300 border border-zinc-700">
                     Say “Yes” or “No”
                   </span>
                 </div>
@@ -2095,7 +2392,7 @@ export default function WorkoutPage() {
                   <div className="grid grid-cols-3 gap-2 pt-1">
                     <button
                       onClick={() => executeConfirmExercise(pendingConfirmation.suggestedExercise, pendingConfirmation)}
-                      className="py-2.5 px-3 rounded-2xl bg-lime-400 hover:bg-lime-300 text-black font-black text-xs flex items-center justify-center gap-1.5 shadow-[0_0_15px_rgba(163,230,53,0.3)] active:scale-95 transition cursor-pointer"
+                      className="py-2.5 px-3 rounded-2xl bg-white hover:bg-zinc-200 text-black font-black text-xs flex items-center justify-center gap-1.5 shadow-md active:scale-95 transition cursor-pointer"
                     >
                       <Check className="h-4 w-4 stroke-[3]" />
                       <span>Yes, log it</span>
@@ -2131,7 +2428,7 @@ export default function WorkoutPage() {
                           }
                         }}
                         placeholder="Type or speak correct exercise name..."
-                        className="flex-1 px-3.5 py-2 rounded-xl bg-zinc-950 border border-zinc-700 text-xs text-white focus:outline-none focus:border-lime-400"
+                        className="flex-1 px-3.5 py-2 rounded-xl bg-zinc-950 border border-zinc-700 text-xs text-white focus:outline-none focus:border-white"
                         autoFocus
                       />
                       <button
@@ -2141,7 +2438,7 @@ export default function WorkoutPage() {
                           }
                         }}
                         disabled={!correctionInput.trim()}
-                        className="px-4 py-2 rounded-xl bg-lime-400 disabled:opacity-40 text-black font-black text-xs hover:bg-lime-300 transition cursor-pointer"
+                        className="px-4 py-2 rounded-xl bg-white disabled:opacity-40 text-black font-black text-xs hover:bg-zinc-200 transition cursor-pointer"
                       >
                         Save &amp; Log
                       </button>
@@ -2158,7 +2455,7 @@ export default function WorkoutPage() {
                         <button
                           key={quick}
                           onClick={() => executeConfirmExercise(quick, pendingConfirmation)}
-                          className="px-2.5 py-1 rounded-lg bg-zinc-850 hover:bg-lime-400/20 hover:text-lime-400 text-[11px] text-zinc-300 border border-zinc-750 transition cursor-pointer"
+                          className="px-2.5 py-1 rounded-lg bg-zinc-850 hover:bg-zinc-700 text-[11px] text-zinc-300 border border-zinc-750 transition cursor-pointer"
                         >
                           {quick}
                         </button>
@@ -2195,7 +2492,7 @@ export default function WorkoutPage() {
                         `${activeExContext.exercise?.exerciseName} ${ambiguousCommand.suggestedWeight || activeExContext.lastWeight || 40} kg ${ambiguousCommand.suggestedReps} reps`
                       );
                     }}
-                    className="py-1.5 px-3 rounded-xl bg-amber-400 hover:bg-amber-300 text-black font-extrabold text-xs transition"
+                    className="py-1.5 px-3 rounded-xl bg-white text-black font-extrabold text-xs transition hover:bg-zinc-200"
                   >
                     Log as {ambiguousCommand.suggestedReps} reps for {activeExContext.exercise.exerciseName}?
                   </button>
@@ -2214,12 +2511,12 @@ export default function WorkoutPage() {
                 if (e.key === 'Enter') handleAddManualExercise(quickExerciseInput);
               }}
               placeholder="Or type exercise name: e.g. Seated Row"
-              className="flex-1 rounded-xl bg-zinc-900 border border-zinc-800 px-3 py-2 text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-lime-400"
+              className="flex-1 rounded-xl bg-zinc-900 border border-zinc-800 px-3 py-2 text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-white"
             />
             <button
               onClick={() => handleAddManualExercise(quickExerciseInput)}
               disabled={!quickExerciseInput.trim()}
-              className="px-3.5 py-2 rounded-xl bg-zinc-800 disabled:opacity-40 text-xs font-bold text-lime-400 hover:bg-zinc-700 transition cursor-pointer"
+              className="px-3.5 py-2 rounded-xl bg-zinc-800 disabled:opacity-40 text-xs font-bold text-white hover:bg-zinc-700 transition cursor-pointer"
             >
               Add
             </button>
@@ -2242,13 +2539,13 @@ export default function WorkoutPage() {
           {activeWorkout.exercises.length === 0 && (
             <div className="py-12 text-center rounded-3xl bg-zinc-900/40 border border-dashed border-zinc-800 space-y-3 px-4">
               <div className="w-12 h-12 rounded-full bg-zinc-800/80 text-zinc-400 mx-auto flex items-center justify-center">
-                <Dumbbell className="h-6 w-6 text-lime-400" />
+                <Dumbbell className="h-6 w-6 text-zinc-400" />
               </div>
               <div>
                 <p className="font-bold text-sm text-white">Workout is currently empty</p>
                 <p className="text-xs text-zinc-400 mt-1 max-w-xs mx-auto">
                   Start listening and say your exercises and sets:
-                  <span className="text-lime-400 font-bold block mt-1">
+                  <span className="text-zinc-200 font-bold block mt-1">
                     “Bench press, 40 kilos, 10 reps”
                   </span>
                 </p>
@@ -2267,7 +2564,7 @@ export default function WorkoutPage() {
                   onClick={() => setSelectedExerciseId(exercise.id)}
                   className={`rounded-3xl border p-4 space-y-3 shadow-lg transition cursor-pointer ${
                     isCurrentlySelected
-                      ? 'bg-zinc-900/95 border-lime-400 shadow-[0_0_20px_rgba(163,230,53,0.15)] ring-1 ring-lime-400/30'
+                      ? 'bg-zinc-900/95 border-zinc-500 shadow-[0_0_20px_rgba(255,255,255,0.08)] ring-1 ring-zinc-600'
                       : 'bg-zinc-900/70 border-zinc-800 hover:border-zinc-700'
                   }`}
                 >
@@ -2283,10 +2580,10 @@ export default function WorkoutPage() {
                           updated[exIndex] = { ...exercise, exerciseName: e.target.value };
                           updateWorkout({ ...activeWorkout, exercises: updated });
                         }}
-                        className="font-extrabold text-base text-white bg-transparent border-b border-transparent hover:border-zinc-700 focus:border-lime-400 focus:outline-none w-full"
+                        className="font-extrabold text-base text-white bg-transparent border-b border-transparent hover:border-zinc-700 focus:border-white focus:outline-none w-full"
                       />
                       {isCurrentlySelected && (
-                        <span className="px-2 py-0.5 rounded-full bg-lime-400/20 text-lime-400 text-[10px] font-black uppercase tracking-wider shrink-0">
+                        <span className="px-2.5 py-0.5 rounded-full bg-zinc-800 text-white border border-zinc-700 text-[10px] font-black uppercase tracking-wider shrink-0">
                           Active Focus
                         </span>
                       )}
@@ -2320,7 +2617,7 @@ export default function WorkoutPage() {
                           key={set.id}
                           className={`p-2.5 rounded-2xl border transition space-y-2 ${
                             set.isCompleted
-                              ? 'bg-lime-950/20 border-lime-500/30 text-white'
+                              ? 'bg-zinc-900 border-zinc-700 text-white shadow-sm'
                               : 'bg-zinc-950/70 border-zinc-800/80 text-zinc-300'
                           }`}
                         >
@@ -2420,11 +2717,10 @@ export default function WorkoutPage() {
                                 onClick={() => {
                                   const newCompleted = !set.isCompleted;
                                   handleUpdateSet(exIndex, setIndex, { isCompleted: newCompleted });
-                                  if (newCompleted) setShowRestTimer(true);
                                 }}
                                 className={`w-7 h-7 rounded-lg flex items-center justify-center transition cursor-pointer ${
                                   set.isCompleted
-                                    ? 'bg-lime-400 text-black shadow-[0_0_10px_rgba(163,230,53,0.4)]'
+                                    ? 'bg-white text-black shadow-md'
                                     : 'bg-zinc-800 text-zinc-500 hover:text-white'
                                 }`}
                                 title={set.isCompleted ? 'Mark incomplete' : 'Mark done'}
@@ -2451,14 +2747,14 @@ export default function WorkoutPage() {
                                 onClick={() => handleToggleInlineTimer(exIndex, setIndex, set.id, set.setNumber)}
                                 className={`px-3 py-1 rounded-lg text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
                                   isTimerRunning
-                                    ? 'bg-amber-500 text-black animate-pulse hover:bg-amber-400 shadow-[0_0_10px_rgba(245,158,11,0.3)]'
+                                    ? 'bg-zinc-200 text-black font-extrabold shadow-sm'
                                     : 'bg-zinc-850 hover:bg-zinc-800 text-zinc-300 border border-zinc-700/80'
                                 }`}
                               >
                                 <Timer className="h-3.5 w-3.5" />
                                 <span>{isTimerRunning ? 'Stop Timer' : 'Start Timer'}</span>
                               </button>
-                              <span className={`font-mono text-xs font-bold ${isTimerRunning ? 'text-amber-300 animate-pulse' : 'text-zinc-400'}`}>
+                              <span className={`font-mono text-xs font-bold ${isTimerRunning ? 'text-white' : 'text-zinc-400'}`}>
                                 {displayDuration}
                               </span>
                             </div>
@@ -2478,7 +2774,7 @@ export default function WorkoutPage() {
                       onClick={() => handleAddSet(exIndex)}
                       className="w-full py-2.5 rounded-xl bg-zinc-800/80 hover:bg-zinc-800 text-xs font-bold text-zinc-300 flex items-center justify-center gap-1.5 transition cursor-pointer border border-zinc-750"
                     >
-                      <Plus className="h-3.5 w-3.5 text-lime-400" />
+                      <Plus className="h-3.5 w-3.5 text-white" />
                       <span>Add Set</span>
                     </button>
                   </div>

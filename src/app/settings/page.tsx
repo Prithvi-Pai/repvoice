@@ -160,21 +160,21 @@ export default function SettingsPage() {
     <div className="space-y-5 pb-28 pt-2 max-w-md mx-auto px-4 font-sans text-[#e2e2e8]">
       {/* Page Title */}
       <div>
-        <span className="text-[10px] font-extrabold uppercase tracking-widest text-[#aed500] block mb-0.5">
+        <span className="text-[10px] font-extrabold uppercase tracking-widest text-zinc-400 block mb-0.5">
           Obsidian Settings
         </span>
         <h1 className="text-2xl font-black text-white tracking-tight">Audio & Preferences</h1>
       </div>
 
       {/* Account Section */}
-      <div className="p-4 rounded-2xl bg-[#1a1c22] border border-white/5 space-y-3 shadow-lg">
+      <div className="p-4 rounded-2xl bg-zinc-950 border border-zinc-800 space-y-3 shadow-lg">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2 text-white font-bold text-sm">
-            <User className="h-4 w-4 text-[#c8f322]" />
+            <User className="h-4 w-4 text-zinc-300" />
             <span>Athlete Profile</span>
           </div>
           {userEmail ? (
-            <span className="text-[10px] font-bold uppercase tracking-wider text-[#c8f322] bg-[#c8f322]/15 px-2 py-0.5 rounded-full">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-white bg-zinc-800 px-2 py-0.5 rounded-full border border-zinc-700">
               Authenticated
             </span>
           ) : (
@@ -210,7 +210,7 @@ export default function SettingsPage() {
             </p>
             <Link
               href="/auth"
-              className="w-full py-2.5 rounded-xl bg-[#c8f322] hover:bg-[#b8e21a] text-black font-extrabold text-xs flex items-center justify-center gap-1.5 shadow-[0_2px_15px_rgba(200,243,34,0.25)] transition"
+              className="w-full py-2.5 rounded-xl bg-white hover:bg-zinc-200 text-black font-extrabold text-xs flex items-center justify-center gap-1.5 shadow-[0_2px_15px_rgba(255,255,255,0.15)] transition"
             >
               Sign In / Create Account
             </Link>
@@ -219,23 +219,23 @@ export default function SettingsPage() {
       </div>
 
       {/* Voice Recognition Mode (Continuous vs Push-to-Talk) */}
-      <div className="p-4 rounded-2xl bg-[#1a1c22] border border-white/5 space-y-3 shadow-lg">
+      <div className="p-4 rounded-2xl bg-zinc-950 border border-zinc-800 space-y-3 shadow-lg">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2 text-white font-bold text-sm">
-            <Mic className="h-4 w-4 text-[#818CF8]" />
+            <Mic className="h-4 w-4 text-zinc-300" />
             <span>Voice Listening Mode</span>
           </div>
-          <span className="text-[10px] font-bold text-[#818CF8] bg-[#818CF8]/15 px-2 py-0.5 rounded-full uppercase">
+          <span className="text-[10px] font-bold text-zinc-300 bg-zinc-800 px-2 py-0.5 rounded-full uppercase border border-zinc-700">
             Hands-Free
           </span>
         </div>
 
-        <div className="grid grid-cols-2 p-1 rounded-xl bg-[#111317] border border-white/5">
+        <div className="grid grid-cols-2 p-1 rounded-xl bg-black border border-zinc-850">
           <button
             onClick={() => updateProfileSetting('recognitionMode', 'continuous')}
             className={`py-2 rounded-lg text-xs font-bold transition ${
               profile.recognitionMode !== 'push_to_talk'
-                ? 'bg-zinc-800 text-[#c8f322] shadow'
+                ? 'bg-zinc-800 text-white shadow'
                 : 'text-zinc-400 hover:text-white'
             }`}
           >
@@ -245,7 +245,7 @@ export default function SettingsPage() {
             onClick={() => updateProfileSetting('recognitionMode', 'push_to_talk')}
             className={`py-2 rounded-lg text-xs font-bold transition ${
               profile.recognitionMode === 'push_to_talk'
-                ? 'bg-zinc-800 text-[#c8f322] shadow'
+                ? 'bg-zinc-800 text-white shadow'
                 : 'text-zinc-400 hover:text-white'
             }`}
           >
@@ -260,9 +260,9 @@ export default function SettingsPage() {
       </div>
 
       {/* Audio Feedback Toggles (TTS & Chime) */}
-      <div className="p-4 rounded-2xl bg-[#1a1c22] border border-white/5 space-y-3 shadow-lg">
+      <div className="p-4 rounded-2xl bg-zinc-950 border border-zinc-800 space-y-3 shadow-lg">
         <div className="flex items-center gap-2 text-white font-bold text-sm">
-          <Volume2 className="h-4 w-4 text-[#c8f322]" />
+          <Volume2 className="h-4 w-4 text-zinc-300" />
           <span>Audio Cues & Speech Feedback</span>
         </div>
 
@@ -281,7 +281,7 @@ export default function SettingsPage() {
               }
             }}
             className={`w-11 h-6 rounded-full transition-colors p-0.5 ${
-              profile.spokenConfirmations !== false ? 'bg-[#c8f322]' : 'bg-zinc-800'
+              profile.spokenConfirmations !== false ? 'bg-white' : 'bg-zinc-800'
             }`}
           >
             <div
@@ -293,7 +293,7 @@ export default function SettingsPage() {
         </div>
 
         {/* Beep on Record Chime */}
-        <div className="flex items-center justify-between pt-2 border-t border-white/5">
+        <div className="flex items-center justify-between pt-2 border-t border-zinc-850">
           <div>
             <span className="text-xs font-semibold text-white block">Beep on Voice Command</span>
             <span className="text-[11px] text-zinc-400 block">Acoustic chime when listening recognizes an utterance</span>
@@ -313,7 +313,7 @@ export default function SettingsPage() {
                 if (next) playAcousticChime(true);
               }}
               className={`w-11 h-6 rounded-full transition-colors p-0.5 ${
-                profile.beepOnRecord !== false ? 'bg-[#c8f322]' : 'bg-zinc-800'
+                profile.beepOnRecord !== false ? 'bg-white' : 'bg-zinc-800'
               }`}
             >
               <div
@@ -327,20 +327,20 @@ export default function SettingsPage() {
       </div>
 
       {/* Gym Noise Filter Preset */}
-      <div className="p-4 rounded-2xl bg-[#1a1c22] border border-white/5 space-y-3 shadow-lg">
+      <div className="p-4 rounded-2xl bg-zinc-950 border border-zinc-800 space-y-3 shadow-lg">
         <div className="flex items-center gap-2 text-white font-bold text-sm">
-          <Sliders className="h-4 w-4 text-[#38BDF8]" />
+          <Sliders className="h-4 w-4 text-zinc-300" />
           <span>Microphone DSP Noise Filter</span>
         </div>
 
-        <div className="grid grid-cols-3 p-1 rounded-xl bg-[#111317] border border-white/5 text-center">
+        <div className="grid grid-cols-3 p-1 rounded-xl bg-black border border-zinc-850 text-center">
           {(['quiet', 'standard', 'aggressive'] as const).map((mode) => (
             <button
               key={mode}
               onClick={() => updateProfileSetting('microphoneSensitivity', mode)}
               className={`py-1.5 rounded-lg text-xs font-bold capitalize transition ${
                 (profile.microphoneSensitivity || 'aggressive') === mode
-                  ? 'bg-zinc-800 text-[#38BDF8] shadow'
+                  ? 'bg-zinc-800 text-white shadow'
                   : 'text-zinc-400 hover:text-white'
               }`}
             >
@@ -354,9 +354,9 @@ export default function SettingsPage() {
       </div>
 
       {/* Preferred Weight Unit & Default Rest Timer */}
-      <div className="p-4 rounded-2xl bg-[#1a1c22] border border-white/5 space-y-3 shadow-lg">
+      <div className="p-4 rounded-2xl bg-zinc-950 border border-zinc-800 space-y-3 shadow-lg">
         <div className="flex items-center gap-2 text-white font-bold text-sm">
-          <Scale className="h-4 w-4 text-[#c8f322]" />
+          <Scale className="h-4 w-4 text-zinc-300" />
           <span>Units & Rest Interval</span>
         </div>
 
@@ -365,12 +365,12 @@ export default function SettingsPage() {
             <label className="text-[10px] font-bold uppercase tracking-wider text-zinc-400 block mb-1">
               Weight Unit
             </label>
-            <div className="grid grid-cols-2 p-1 rounded-xl bg-[#111317] border border-white/5">
+            <div className="grid grid-cols-2 p-1 rounded-xl bg-black border border-zinc-850">
               <button
                 onClick={() => updateProfileSetting('preferredUnit', 'lbs')}
                 className={`py-1.5 rounded-lg text-xs font-bold transition ${
                   profile.preferredUnit === 'lbs'
-                    ? 'bg-zinc-800 text-[#c8f322] shadow'
+                    ? 'bg-zinc-800 text-white shadow'
                     : 'text-zinc-400 hover:text-white'
                 }`}
               >
@@ -380,7 +380,7 @@ export default function SettingsPage() {
                 onClick={() => updateProfileSetting('preferredUnit', 'kg')}
                 className={`py-1.5 rounded-lg text-xs font-bold transition ${
                   profile.preferredUnit === 'kg'
-                    ? 'bg-zinc-800 text-[#c8f322] shadow'
+                    ? 'bg-zinc-800 text-white shadow'
                     : 'text-zinc-400 hover:text-white'
                 }`}
               >
@@ -396,7 +396,7 @@ export default function SettingsPage() {
             <select
               value={profile.defaultRestTimerSeconds || 90}
               onChange={(e) => updateProfileSetting('defaultRestTimerSeconds', parseInt(e.target.value) || 90)}
-              className="w-full bg-[#111317] border border-white/10 rounded-xl px-2.5 py-2 text-xs text-white focus:outline-none focus:border-[#c8f322]"
+              className="w-full bg-black border border-zinc-800 rounded-xl px-2.5 py-2 text-xs text-white focus:outline-none focus:border-zinc-500"
             >
               <option value="30">30 seconds</option>
               <option value="60">60 seconds</option>
@@ -409,14 +409,14 @@ export default function SettingsPage() {
       </div>
 
       {/* Supabase Connection Test */}
-      <div className="p-4 rounded-2xl bg-[#1a1c22] border border-white/5 space-y-3 shadow-lg">
+      <div className="p-4 rounded-2xl bg-zinc-950 border border-zinc-800 space-y-3 shadow-lg">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2 text-white font-bold text-sm">
-            <Database className="h-4 w-4 text-[#c8f322]" />
+            <Database className="h-4 w-4 text-zinc-300" />
             <span>Supabase Cloud Sync</span>
           </div>
           {isConfigured ? (
-            <span className="flex items-center gap-1 text-[10px] font-bold text-[#c8f322] bg-[#c8f322]/15 px-2 py-0.5 rounded-full">
+            <span className="flex items-center gap-1 text-[10px] font-bold text-zinc-200 bg-zinc-800 px-2 py-0.5 rounded-full border border-zinc-750">
               <ShieldCheck className="h-3 w-3" /> Ready
             </span>
           ) : (
@@ -429,9 +429,9 @@ export default function SettingsPage() {
         <button
           onClick={handleTestConnection}
           disabled={testResult.status === 'testing' || !isConfigured}
-          className="w-full py-2.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 disabled:opacity-40 text-xs font-bold text-white flex items-center justify-center gap-1.5 border border-zinc-700 transition cursor-pointer"
+          className="w-full py-2.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 disabled:opacity-40 text-xs font-bold text-white flex items-center justify-center gap-1.5 border border-zinc-750 transition cursor-pointer"
         >
-          <RefreshCw className={`h-3.5 w-3.5 ${testResult.status === 'testing' ? 'animate-spin text-[#c8f322]' : ''}`} />
+          <RefreshCw className={`h-3.5 w-3.5 ${testResult.status === 'testing' ? 'animate-spin text-white' : ''}`} />
           <span>Test Database Connection</span>
         </button>
 
@@ -439,14 +439,14 @@ export default function SettingsPage() {
           <div
             className={`p-3 rounded-xl text-xs flex items-start gap-2 ${
               testResult.status === 'success'
-                ? 'bg-lime-950/70 border border-lime-800 text-lime-300'
+                ? 'bg-zinc-900 border border-zinc-700 text-zinc-100'
                 : testResult.status === 'error'
                 ? 'bg-rose-950/70 border border-rose-800 text-rose-300'
                 : 'bg-zinc-950 border border-zinc-800 text-zinc-300'
             }`}
           >
             {testResult.status === 'success' ? (
-              <Check className="h-4 w-4 text-[#c8f322] shrink-0 mt-0.5" />
+              <Check className="h-4 w-4 text-zinc-200 shrink-0 mt-0.5" />
             ) : testResult.status === 'error' ? (
               <AlertTriangle className="h-4 w-4 text-rose-400 shrink-0 mt-0.5" />
             ) : (

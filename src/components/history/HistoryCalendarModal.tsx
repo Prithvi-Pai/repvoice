@@ -34,11 +34,11 @@ export function HistoryCalendarModal({
         {/* Header */}
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-xl bg-lime-400/10 text-lime-400 border border-lime-400/30 flex items-center justify-center">
+            <div className="w-8 h-8 rounded-xl bg-zinc-800 text-white border border-zinc-700 flex items-center justify-center">
               <CalendarIcon className="h-4 w-4" />
             </div>
             <div>
-              <span className="text-[10px] font-extrabold uppercase tracking-widest text-lime-400 block">
+              <span className="text-[10px] font-extrabold uppercase tracking-widest text-zinc-400 block">
                 DATE FILTER
               </span>
               <h3 className="text-base font-black text-white">Select Past Date</h3>
@@ -63,7 +63,7 @@ export function HistoryCalendarModal({
             max={todayKey}
             value={chosenDate}
             onChange={(e) => setChosenDate(e.target.value)}
-            className="w-full rounded-xl bg-zinc-950 border border-zinc-800 p-3 text-sm text-white focus:outline-none focus:border-lime-400 font-mono"
+            className="w-full rounded-xl bg-zinc-950 border border-zinc-800 p-3 text-sm text-white focus:outline-none focus:border-zinc-500 font-mono"
           />
           <p className="text-[11px] text-zinc-500">
             Selected: <span className="text-zinc-300 font-semibold">{formatLocalDateLabel(chosenDate)}</span>
@@ -74,7 +74,7 @@ export function HistoryCalendarModal({
         <div className="flex flex-col gap-2 pt-1">
           <button
             onClick={handleApply}
-            className="w-full py-2.5 rounded-xl bg-lime-400 hover:bg-lime-300 text-black font-extrabold text-xs flex items-center justify-center gap-1.5 transition shadow-[0_0_15px_rgba(163,230,53,0.25)]"
+            className="w-full py-2.5 rounded-xl bg-white hover:bg-zinc-200 text-black font-extrabold text-xs flex items-center justify-center gap-1.5 transition shadow-[0_0_15px_rgba(255,255,255,0.15)]"
           >
             <Check className="h-4 w-4 stroke-[3]" />
             <span>Show Workouts for this Date</span>
