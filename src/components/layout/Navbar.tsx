@@ -1,44 +1,20 @@
 'use client';
 
-import { useState, useEffect } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { Dumbbell, ShieldCheck, User, LogOut } from 'lucide-react';
-import { getSupabaseClient, getSupabaseConfig } from '@/lib/supabase/client';
+import { useAuth } from '@/context/AuthContext';
 
 export function Navbar() {
-  const [userEmail, setUserEmail] = useState<string | null>(null);
-  const [isConfigured, setIsConfigured] = useState<boolean>(false);
-
-  useEffect(() => {
-    const config = getSupabaseConfig();
-    setIsConfigured(config.isConfigured);
-
-    const client = getSupabaseClient();
-    if (client) {
-      client.auth.getUser().then(({ data }) => {
-        if (data?.user?.email) {
-          setUserEmail(data.user.email);
-        }
-      });
-
-      const { data: { subscription } } = client.auth.onAuthStateChange((_event, session) => {
-        setUserEmail(session?.user?.email ?? null);
-      });
-
-      return () => {
-        subscription.unsubscribe();
-      };
-    }
-  }, []);
+  const { user, signOut } = useAuth();
+  const router = useRouter();
 
   const handleSignOut = async () => {
-    const client = getSupabaseClient();
-    if (client) {
-      await client.auth.signOut();
-      setUserEmail(null);
-      window.location.reload();
-    }
+    await signOut();
+    router.replace('/auth');
   };
+
+  const userEmail = user?.email;
 
   return (
     <header className="sticky top-0 z-40 w-full border-b border-zinc-800 bg-black/95 backdrop-blur-md">

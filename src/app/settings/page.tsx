@@ -2,6 +2,8 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
+import { useAuth } from '@/context/AuthContext';
 import {
   ShieldCheck,
   ShieldAlert,
@@ -29,6 +31,8 @@ import { BottomNav } from '@/components/layout/BottomNav';
 import { playAcousticChime, speakVoiceConfirmation } from '@/lib/voice/audioFeedback';
 
 export default function SettingsPage() {
+  const router = useRouter();
+  const { user, signOut: authSignOut } = useAuth();
   const [profile, setProfile] = useState<UserProfile>({
     id: 'guest',
     displayName: 'Gym Athlete',
@@ -39,7 +43,7 @@ export default function SettingsPage() {
     microphoneSensitivity: 'aggressive',
     defaultRestTimerSeconds: 90,
   });
-  const [userEmail, setUserEmail] = useState<string | null>(null);
+  const userEmail = user?.email || null;
   const [isConfigured, setIsConfigured] = useState<boolean>(false);
   const [testResult, setTestResult] = useState<{ status: 'idle' | 'testing' | 'success' | 'error'; message?: string }>({
     status: 'idle',
@@ -59,15 +63,6 @@ export default function SettingsPage() {
     if (typeof window !== 'undefined') {
       const win = window as any;
       setSpeechSupport(Boolean(win.SpeechRecognition || win.webkitSpeechRecognition));
-    }
-
-    const client = getSupabaseClient();
-    if (client) {
-      client.auth.getUser().then(({ data }) => {
-        if (data?.user?.email) {
-          setUserEmail(data.user.email);
-        }
-      });
     }
   }, []);
 
@@ -191,13 +186,10 @@ export default function SettingsPage() {
             </p>
             <button
               onClick={async () => {
-                const client = getSupabaseClient();
-                if (client) {
-                  await client.auth.signOut();
-                  window.location.reload();
-                }
+                await authSignOut();
+                router.replace('/auth');
               }}
-              className="py-1.5 px-3 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-rose-400 font-bold text-xs flex items-center gap-1.5 transition"
+              className="py-1.5 px-3 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-rose-400 font-bold text-xs flex items-center gap-1.5 transition cursor-pointer"
             >
               <LogOut className="h-3.5 w-3.5" />
               <span>Sign Out</span>

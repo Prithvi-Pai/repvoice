@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { Dumbbell, History, Settings, Play, CalendarRange } from 'lucide-react';
 import { cn } from '@/lib/utils/cn';
+import { useAuth } from '@/context/AuthContext';
 
 interface BottomNavProps {
   hasActiveWorkout?: boolean;
@@ -11,6 +12,12 @@ interface BottomNavProps {
 
 export function BottomNav({ hasActiveWorkout }: BottomNavProps) {
   const pathname = usePathname();
+  const { user, isLoading } = useAuth();
+
+  // Hide navigation tabs completely if not authenticated
+  if (isLoading || !user) {
+    return null;
+  }
 
   const navItems = [
     {
@@ -36,7 +43,7 @@ export function BottomNav({ hasActiveWorkout }: BottomNavProps) {
       label: 'Settings',
       href: '/settings',
       icon: Settings,
-      active: pathname === '/settings' || pathname === '/auth',
+      active: pathname === '/settings',
     },
   ];
 

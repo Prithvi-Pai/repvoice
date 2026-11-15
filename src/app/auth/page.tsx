@@ -15,30 +15,21 @@ import {
 } from 'lucide-react';
 import { getSupabaseClient } from '@/lib/supabase/client';
 import { getActiveWorkout } from '@/lib/storage';
-import { BottomNav } from '@/components/layout/BottomNav';
+import { useAuth } from '@/context/AuthContext';
 
 export default function AuthPage() {
   const router = useRouter();
+  const { user, signOut: authSignOut } = useAuth();
   const [mode, setMode] = useState<'signin' | 'signup'>('signin');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
-  const [currentEmail, setCurrentEmail] = useState<string | null>(null);
   const [hasActiveWorkout, setHasActiveWorkout] = useState(false);
 
   useEffect(() => {
     setHasActiveWorkout(Boolean(getActiveWorkout()));
-
-    const client = getSupabaseClient();
-    if (client) {
-      client.auth.getUser().then(({ data }) => {
-        if (data?.user?.email) {
-          setCurrentEmail(data.user.email);
-        }
-      });
-    }
   }, []);
 
   const handleAuth = async (e: React.FormEvent) => {
@@ -73,10 +64,10 @@ export default function AuthPage() {
             'Account created! A confirmation email has been sent. Please confirm before signing in.'
           );
         } else {
-          setSuccessMessage('Account created and signed in successfully!');
+          setSuccessMessage('Account created and signed in successfully! Redirecting...');
           setTimeout(() => {
-            router.push('/');
-          }, 1000);
+            router.replace('/');
+          }, 600);
         }
       } else {
         const { data, error } = await client.auth.signInWithPassword({
@@ -89,8 +80,8 @@ export default function AuthPage() {
         if (data.session) {
           setSuccessMessage('Signed in successfully! Redirecting...');
           setTimeout(() => {
-            router.push('/');
-          }, 800);
+            router.replace('/');
+          }, 500);
         }
       }
     } catch (err: any) {
@@ -105,13 +96,11 @@ export default function AuthPage() {
   };
 
   const handleSignOut = async () => {
-    const client = getSupabaseClient();
-    if (client) {
-      await client.auth.signOut();
-      setCurrentEmail(null);
-      setSuccessMessage('Signed out successfully.');
-    }
+    await authSignOut();
+    setSuccessMessage('Signed out successfully.');
   };
+
+  const currentEmail = user?.email;
 
   return (
     <div className="space-y-6 pb-12 pt-2">
@@ -280,9 +269,6 @@ export default function AuthPage() {
           </p>
         </div>
       )}
-
-      {/* Bottom Nav */}
-      <BottomNav />
     </div>
   );
 }

@@ -52,6 +52,7 @@ import {
 import { getWorkoutPlans, instantiateWorkoutFromPlan } from '@/lib/plans/planStore';
 import { calculateHomeDashboardMetrics } from '@/lib/analytics/metricsEngine';
 import { getSupabaseClient } from '@/lib/supabase/client';
+import { useAuth } from '@/context/AuthContext';
 import { parseWorkoutCommand } from '@/lib/voice/workoutCommandParser';
 import { useContinuousWorkoutSpeech, ContinuousSpeechStatus } from '@/lib/voice/useContinuousWorkoutSpeech';
 import { RestTimer } from '@/components/workout/RestTimer';
@@ -107,7 +108,14 @@ export default function WorkoutPage() {
   const [workoutNotes, setWorkoutNotes] = useState<string>('');
   const [quickExerciseInput, setQuickExerciseInput] = useState<string>('');
   const [lastWorkout, setLastWorkout] = useState<Workout | null>(null);
-  const [userEmail, setUserEmail] = useState<string | null>(null);
+  const { user } = useAuth();
+  const [userEmail, setUserEmail] = useState<string | null>(user?.email || null);
+
+  useEffect(() => {
+    if (user?.email) {
+      setUserEmail(user.email);
+    }
+  }, [user]);
   const [preferredUnit, setPreferredUnit] = useState<WeightUnit>('kg');
   const [clarificationState, setClarificationState] = useState<ClarificationState | null>(null);
 
