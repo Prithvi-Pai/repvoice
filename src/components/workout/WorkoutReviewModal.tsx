@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import {
   Trophy,
   Flame,
@@ -67,29 +67,45 @@ export function WorkoutReviewModal({
     return w.title;
   };
 
-  const [workoutTitle, setWorkoutTitle] = useState<string>(getInitialTitle(workout));
+  const [workoutTitle, setWorkoutTitle] = useState<string>(() => getInitialTitle(workout));
+  const hasInitializedForOpenRef = useRef<boolean>(false);
 
+  // Initialize title ONLY once when modal transitions to open
+  useEffect(() => {
+    if (isOpen) {
+      if (!hasInitializedForOpenRef.current) {
+        setWorkoutTitle(getInitialTitle(workout));
+        hasInitializedForOpenRef.current = true;
+      }
+    } else {
+      hasInitializedForOpenRef.current = false;
+    }
+  }, [isOpen, workout]);
+
+  // Evaluate PRs and metrics once per modal open
   useEffect(() => {
     if (isOpen && workout) {
-      const generated = getInitialTitle(workout);
-      setWorkoutTitle(generated);
-
       getPersonalRecords().then((prs) => {
         setExistingPRs(prs);
         const newPrList = evaluateWorkoutPRs(workout, prs);
         setDetectedPRs(newPrList);
         const reviewMetrics = calculateWorkoutReviewMetrics(workout, newPrList);
         setMetrics(reviewMetrics);
-
-        const calories = calculateEstimatedCalories(
-          elapsedSeconds,
-          reviewMetrics.totalVolume,
-          reviewMetrics.totalSets
-        );
-        setEstimatedCalories(calories);
       });
     }
-  }, [isOpen, workout, elapsedSeconds]);
+  }, [isOpen, workout]);
+
+  // Update calories burned as duration increases, without re-evaluating PRs or resetting the title
+  useEffect(() => {
+    if (isOpen && metrics) {
+      const calories = calculateEstimatedCalories(
+        elapsedSeconds,
+        metrics.totalVolume,
+        metrics.totalSets
+      );
+      setEstimatedCalories(calories);
+    }
+  }, [isOpen, elapsedSeconds, metrics]);
 
   if (!isOpen || !workout) return null;
 
