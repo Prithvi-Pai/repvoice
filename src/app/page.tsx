@@ -63,6 +63,8 @@ import {
   syncAndLoadAllAliases,
   saveLearnedAlias,
   toTitleCase,
+  areExercisesMatching,
+  findMatchingExerciseIndex,
 } from '@/lib/exercises/exerciseStore';
 import { VoiceClarificationModal } from '@/components/workout/VoiceClarificationModal';
 import {
@@ -79,9 +81,9 @@ import {
   prewarmGymNoiseReduction,
   releaseGymNoiseReduction,
 } from '@/lib/voice/audioCaptureEnhancer';
-import { DailyRecommendationCard } from '@/components/workout/DailyRecommendationCard';
+import { GymAudioIntelligence } from '@/components/audio/GymAudioIntelligence';
 import { generateDailyRecommendation } from '@/lib/recommendation/recommendationEngine';
-import { getLocalDateKey } from '@/lib/history/dateGrouping';
+import { getLocalDateKey, generateDefaultWorkoutName } from '@/lib/history/dateGrouping';
 import { WorkoutReviewModal } from '@/components/workout/WorkoutReviewModal';
 import { getPreviousPerformanceForExercise } from '@/lib/history/previousPerformance';
 import { calculateEstimatedCalories } from '@/lib/analytics/metricsEngine';
@@ -93,6 +95,8 @@ export default function WorkoutPage() {
   // Synchronous refs to prevent React state closure staleness in voice callbacks
   const activeWorkoutRef = useRef<Workout | null>(null);
   const selectedExerciseIdRef = useRef<string | null>(null);
+  const lastVoiceUtteranceRef = useRef<{ text: string; time: number } | null>(null);
+  const lastWorkoutActivityTimeRef = useRef<number>(Date.now());
 
   const [elapsedSeconds, setElapsedSeconds] = useState<number>(0);
   const [setTimerSeconds, setSetTimerSeconds] = useState<number>(0);
@@ -295,13 +299,19 @@ export default function WorkoutPage() {
   }, []);
 
   // Start new workout session
-  const handleStartWorkout = useCallback((title: string = 'Gym Workout'): Workout => {
+  const handleStartWorkout = useCallback((title?: string): Workout => {
+    const finalTitle =
+      title && title !== 'Gym Workout' && title !== 'Continuous Voice Workout'
+        ? title
+        : generateDefaultWorkoutName(new Date());
+
     const newWorkout: Workout = {
       id: typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `w_${Date.now()}`,
-      title,
+      title: finalTitle,
       startedAt: new Date().toISOString(),
       exercises: [],
     };
+    lastWorkoutActivityTimeRef.current = Date.now();
     updateWorkout(newWorkout);
     updateSelectedExerciseId(null);
     setElapsedSeconds(0);
@@ -417,11 +427,9 @@ export default function WorkoutPage() {
 
       // 5. If selection only (e.g. "Next exercise, chest press")
       if (pending.isSelectionOnly) {
-        const existing = currentWorkout.exercises.find(
-          (e) => e.exerciseName.toLowerCase() === cleanName.toLowerCase()
-        );
-        if (existing) {
-          updateSelectedExerciseId(existing.id);
+        const existingIdx = findMatchingExerciseIndex(currentWorkout.exercises, cleanName, customAliases);
+        if (existingIdx >= 0) {
+          updateSelectedExerciseId(currentWorkout.exercises[existingIdx].id);
         } else {
           const newExId = typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `ex_${Date.now()}`;
           const newEx: WorkoutExercise = {
@@ -446,18 +454,16 @@ export default function WorkoutPage() {
       const currentDuration = setTimerSeconds;
       setSetTimerSeconds(0);
 
-      const existingIdx = currentWorkout.exercises.findIndex(
-        (e) => e.exerciseName.toLowerCase() === cleanName.toLowerCase()
-      );
+      const existingIdx = findMatchingExerciseIndex(currentWorkout.exercises, cleanName, customAliases);
 
       let updatedExercises = [...currentWorkout.exercises];
       let targetExerciseId: string;
 
       const targetSetNum =
-        pending.setNumber !== undefined
-          ? pending.setNumber
-          : existingIdx >= 0
+        existingIdx >= 0
           ? updatedExercises[existingIdx].sets.length + 1
+          : pending.setNumber !== undefined
+          ? pending.setNumber
           : 1;
 
       const newSetsToAdd: WorkoutSet[] = [
@@ -532,9 +538,7 @@ export default function WorkoutPage() {
       currentWorkout: Workout
     ) => {
       const liveWorkout = activeWorkoutRef.current || currentWorkout;
-      const existingIdx = liveWorkout.exercises.findIndex(
-        (e) => e.exerciseName.toLowerCase() === command.exercise.toLowerCase()
-      );
+      const existingIdx = findMatchingExerciseIndex(liveWorkout.exercises, command.exercise, customAliases);
 
       let updatedExercises = [...liveWorkout.exercises];
       let targetExerciseId: string;
@@ -865,6 +869,21 @@ export default function WorkoutPage() {
   // Continuous Voice Command Dispatcher
   const handleVoiceCommand = useCallback(
     (finalTranscript: string) => {
+      const now = Date.now();
+      const cleanTranscript = finalTranscript.trim().toLowerCase();
+
+      // Prevent duplicate speech recognition processing if identical transcript arrives within 1.8 seconds
+      if (
+        lastVoiceUtteranceRef.current &&
+        lastVoiceUtteranceRef.current.text === cleanTranscript &&
+        now - lastVoiceUtteranceRef.current.time < 1800
+      ) {
+        console.info('Ignoring duplicate voice recognition utterance (< 1.8s):', cleanTranscript);
+        return;
+      }
+      lastVoiceUtteranceRef.current = { text: cleanTranscript, time: now };
+      lastWorkoutActivityTimeRef.current = now;
+
       // Ensure workout exists using synchronous ref
       let currentWorkout = activeWorkoutRef.current || activeWorkout;
       if (!currentWorkout) {
@@ -885,34 +904,16 @@ export default function WorkoutPage() {
 
       console.log('Voice Command Received:', command);
 
-      // If the incoming command explicitly names an exercise, immediately switch active focus to it
+      // If the incoming command explicitly names an exercise, switch active focus to it
       if ('exercise' in command && command.exercise) {
         const targetExName = command.exercise;
-        let currentW = activeWorkoutRef.current || currentWorkout;
-        const existingEx = currentW.exercises.find(
-          (e) => e.exerciseName.toLowerCase() === targetExName.toLowerCase()
-        );
-        if (existingEx) {
+        const currentW = activeWorkoutRef.current || currentWorkout;
+        const existingIdx = findMatchingExerciseIndex(currentW.exercises, targetExName, customAliases);
+        if (existingIdx >= 0) {
+          const existingEx = currentW.exercises[existingIdx];
           if (selectedExerciseIdRef.current !== existingEx.id) {
             updateSelectedExerciseId(existingEx.id);
           }
-        } else {
-          const newExId =
-            typeof crypto !== 'undefined' && crypto.randomUUID
-              ? crypto.randomUUID()
-              : `ex_${Date.now()}`;
-          const newEx: WorkoutExercise = {
-            id: newExId,
-            exerciseName: targetExName,
-            sets: [],
-          };
-          const updatedW = {
-            ...currentW,
-            exercises: [...currentW.exercises, newEx],
-          };
-          updateWorkout(updatedW);
-          updateSelectedExerciseId(newExId);
-          currentWorkout = updatedW;
         }
       }
 
@@ -1538,6 +1539,49 @@ export default function WorkoutPage() {
     }
   };
 
+  // 30-Minute Inactivity Auto-Finish Check
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const liveWorkout = activeWorkoutRef.current;
+      if (!liveWorkout) return;
+
+      const hasAnySets = liveWorkout.exercises.some((e) => e.sets.length > 0);
+      if (!hasAnySets) return;
+
+      const idleTime = Date.now() - lastWorkoutActivityTimeRef.current;
+      const THIRTY_MINUTES = 30 * 60 * 1000;
+
+      if (idleTime >= THIRTY_MINUTES) {
+        console.info('Workout auto-finished due to 30 minutes of inactivity');
+        const autoTitle = liveWorkout.title || generateDefaultWorkoutName(new Date());
+        const finishedWorkout: Workout = {
+          ...liveWorkout,
+          title: autoTitle,
+          completedAt: new Date().toISOString(),
+          notes: 'Auto-saved after 30 minutes of inactivity.',
+        };
+
+        stopContinuousListening();
+
+        saveFinishedWorkout(finishedWorkout).then((res) => {
+          updateWorkout(null);
+          updateSelectedExerciseId(null);
+          setActiveSetTimers({});
+          activeSetTimersRef.current = {};
+          setWorkoutNotes('');
+          setElapsedSeconds(0);
+          setSetTimerSeconds(0);
+          setSaveStatus({
+            type: 'info',
+            message: `Workout auto-saved as "${autoTitle}" after 30 minutes of inactivity.`,
+          });
+        });
+      }
+    }, 15000);
+
+    return () => clearInterval(interval);
+  }, [stopContinuousListening, updateWorkout, updateSelectedExerciseId]);
+
   // Add exercise manually
   const handleAddManualExercise = (exerciseName: string) => {
     const base = activeWorkoutRef.current || activeWorkout || handleStartWorkout('Gym Workout');
@@ -1654,8 +1698,57 @@ export default function WorkoutPage() {
     }
   };
 
+  // Rename/Correct an exercise with intelligent merging into existing movement (Scenario E)
+  const handleRenameExercise = (exerciseIndex: number, newName: string) => {
+    const currentW = activeWorkoutRef.current || activeWorkout;
+    if (!currentW || !currentW.exercises[exerciseIndex]) return;
+
+    const trimmed = newName.trim();
+    if (!trimmed) return;
+
+    const cleanTitle = toTitleCase(trimmed);
+    const targetEx = currentW.exercises[exerciseIndex];
+
+    // Check if another exercise in the current session matches the corrected name (using canonical matcher)
+    const matchingIdx = currentW.exercises.findIndex(
+      (ex, idx) => idx !== exerciseIndex && areExercisesMatching(ex.exerciseName, cleanTitle, customAliases)
+    );
+
+    if (matchingIdx >= 0) {
+      // Merge sets into the existing exercise!
+      const destinationEx = currentW.exercises[matchingIdx];
+      const startSetNum = destinationEx.sets.length + 1;
+
+      const mergedSets: WorkoutSet[] = [
+        ...destinationEx.sets,
+        ...targetEx.sets.map((s, idx) => ({
+          ...s,
+          setNumber: startSetNum + idx,
+        })),
+      ];
+
+      const updatedExercises = currentW.exercises
+        .filter((_, idx) => idx !== exerciseIndex)
+        .map((ex) => (ex.id === destinationEx.id ? { ...ex, sets: mergedSets } : ex));
+
+      const updatedWorkout = { ...currentW, exercises: updatedExercises };
+      updateWorkout(updatedWorkout);
+      updateSelectedExerciseId(destinationEx.id);
+
+      setSaveStatus({
+        type: 'info',
+        message: `Merged ${targetEx.sets.length} sets from "${targetEx.exerciseName}" into "${destinationEx.exerciseName}".`,
+      });
+    } else {
+      // Update exercise name in place, preserving all sets
+      const updatedExercises = [...currentW.exercises];
+      updatedExercises[exerciseIndex] = { ...targetEx, exerciseName: cleanTitle };
+      updateWorkout({ ...currentW, exercises: updatedExercises });
+    }
+  };
+
   // Finish and save workout to Supabase or local storage
-  const handleFinishWorkout = async () => {
+  const handleFinishWorkout = async (customTitle?: string) => {
     const currentWorkout = activeWorkoutRef.current || activeWorkout;
     if (!currentWorkout) return;
 
@@ -1665,9 +1758,14 @@ export default function WorkoutPage() {
     setIsSaving(true);
     setSaveStatus(null);
 
+    const completionDate = new Date();
+    const finalTitle =
+      customTitle?.trim() || currentWorkout.title || generateDefaultWorkoutName(completionDate);
+
     const workoutToSave: Workout = {
       ...currentWorkout,
-      completedAt: new Date().toISOString(),
+      title: finalTitle,
+      completedAt: completionDate.toISOString(),
       notes: workoutNotes.trim() || undefined,
     };
 
@@ -1701,15 +1799,20 @@ export default function WorkoutPage() {
   };
 
   // Save workout locally on device (Guest mode / Offline)
-  const handleSaveLocally = () => {
+  const handleSaveLocally = (customTitle?: string) => {
     const currentWorkout = activeWorkoutRef.current || activeWorkout;
     if (!currentWorkout) return;
 
     stopContinuousListening();
 
+    const completionDate = new Date();
+    const finalTitle =
+      customTitle?.trim() || currentWorkout.title || generateDefaultWorkoutName(completionDate);
+
     const workoutToSave: Workout = {
       ...currentWorkout,
-      completedAt: new Date().toISOString(),
+      title: finalTitle,
+      completedAt: completionDate.toISOString(),
       notes: workoutNotes.trim() || undefined,
     };
 
@@ -2052,91 +2155,8 @@ export default function WorkoutPage() {
             </div>
           </div>
 
-          {/* Quick Start Routines Section (Horizontal Carousel from Stitch) */}
-          <div className="flex flex-col gap-2.5">
-            <div className="flex items-center justify-between px-1">
-              <span className="text-xs font-bold uppercase tracking-wider text-zinc-400">
-                Scheduled & Quick Routines
-              </span>
-              <Link href="/plan" className="text-xs font-bold text-zinc-300 hover:text-white underline">
-                View All Plans
-              </Link>
-            </div>
-
-            <div className="flex overflow-x-auto gap-3 pb-2 -mx-4 px-4 scrollbar-none snap-x">
-              {availablePlans.length > 0 ? (
-                availablePlans.slice(0, 4).map((plan) => {
-                  const totalSets = plan.exercises.reduce((acc, e) => acc + (e.targetSets || 0), 0);
-                  return (
-                    <div
-                      key={plan.id}
-                      className="min-w-[260px] max-w-[280px] rounded-2xl bg-zinc-950 border border-zinc-800 p-4 flex flex-col justify-between shadow-md snap-start flex-shrink-0"
-                    >
-                      <div>
-                        <div className="flex items-center justify-between mb-1.5">
-                          <span className="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-full bg-zinc-900 border border-zinc-800 text-zinc-300">
-                            {plan.scheduledDay || 'Anytime'}
-                          </span>
-                          <span className="text-[11px] text-zinc-400 font-semibold">
-                            {totalSets} sets
-                          </span>
-                        </div>
-                        <h4 className="text-sm font-extrabold text-white truncate mb-1">
-                          {plan.title}
-                        </h4>
-                        <p className="text-[11px] text-zinc-400 line-clamp-2">
-                          {plan.exercises.map((e) => e.exerciseName).join(', ')}
-                        </p>
-                      </div>
-
-                      <button
-                        onClick={() => {
-                          const w = instantiateWorkoutFromPlan(plan);
-                          saveActiveWorkout(w);
-                          setActiveWorkout(w);
-                          if (w.exercises.length > 0) setSelectedExerciseId(w.exercises[0].id);
-                          if (!isListeningDesired) {
-                            prewarmGymNoiseReduction().catch(() => {});
-                            startContinuousListening();
-                          }
-                        }}
-                        className="mt-3 w-full py-2.5 rounded-xl bg-white hover:bg-zinc-200 text-black font-extrabold text-xs flex items-center justify-center gap-1.5 shadow-sm active:scale-95 transition cursor-pointer"
-                      >
-                        <Play className="h-3.5 w-3.5 fill-black" />
-                        <span>Start Routine</span>
-                      </button>
-                    </div>
-                  );
-                })
-              ) : (
-                <div className="p-4 rounded-2xl bg-zinc-950 border border-zinc-800 text-xs text-zinc-400">
-                  Loading routines...
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* Daily Recommendation Card (if active) */}
-          {dailyRecommendation && !isRecommendationDismissed && (
-            <DailyRecommendationCard
-              recommendation={dailyRecommendation}
-              workouts={workoutHistory}
-              preferredUnit={preferredUnit}
-              onAcceptWorkout={handleAcceptRecommendation}
-              onDismiss={() => setIsRecommendationDismissed(true)}
-              onOverrideRestDay={() => {
-                const todayKey = getLocalDateKey(new Date());
-                const overrideRec = generateDailyRecommendation([], todayKey, preferredUnit);
-                setDailyRecommendation({
-                  ...overrideRec,
-                  title: 'Optional Active Session',
-                  subtitle: 'Light training session override',
-                  explanation: 'Athlete requested workout override on scheduled rest day.',
-                  isRestDay: false,
-                });
-              }}
-            />
-          )}
+          {/* Gym Audio Intelligence Feature */}
+          <GymAudioIntelligence />
 
           {/* Recent Activity Snippet */}
           {lastWorkout && (
@@ -2588,6 +2608,14 @@ export default function WorkoutPage() {
                           updated[exIndex] = { ...exercise, exerciseName: e.target.value };
                           updateWorkout({ ...activeWorkout, exercises: updated });
                         }}
+                        onBlur={(e) => {
+                          handleRenameExercise(exIndex, e.target.value);
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            (e.target as HTMLInputElement).blur();
+                          }
+                        }}
                         className="font-extrabold text-base text-white bg-transparent border-b border-transparent hover:border-zinc-700 focus:border-white focus:outline-none w-full"
                       />
                       {isCurrentlySelected && (
@@ -2815,7 +2843,7 @@ export default function WorkoutPage() {
           workoutNotes={workoutNotes}
           onNotesChange={setWorkoutNotes}
           onClose={() => setShowFinishConfirm(false)}
-          onSave={userEmail ? handleFinishWorkout : async () => handleSaveLocally()}
+          onSave={(title) => (userEmail ? handleFinishWorkout(title) : handleSaveLocally(title))}
         />
       )}
 

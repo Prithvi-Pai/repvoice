@@ -11,7 +11,7 @@ import {
   Workout,
   WorkoutExercise,
 } from '../../types';
-import { toTitleCase } from '../exercises/exerciseStore';
+import { toTitleCase, areExercisesMatching } from '../exercises/exerciseStore';
 import { resolveMultilingualPhrase } from './multilingualNormalizer';
 
 export interface ParseCandidateInput {
@@ -91,35 +91,15 @@ export function evaluateClarificationNeed(input: ParseCandidateInput): Clarifica
     };
   }
 
-  // 2. Check for Repeated Exercise disambiguation (Feature 2)
+  // 2. Check for Repeated Exercise disambiguation
   if (resolvedExercise && currentWorkout) {
-    const existingSameNameEx = currentWorkout.exercises.find(
-      (e) => e.exerciseName.toLowerCase() === resolvedExercise.toLowerCase()
+    const existingSameNameEx = currentWorkout.exercises.find((e) =>
+      areExercisesMatching(e.exerciseName, resolvedExercise, customAliases)
     );
 
     if (existingSameNameEx && existingSameNameEx.sets.length > 0) {
       const nextInferredSet = existingSameNameEx.sets.length + 1;
       const targetSetNum = parsedSetNumber || nextInferredSet;
-
-      // If user says an exercise that is already logged and didn't explicitly say "set X"
-      if (!parsedSetNumber && !isNextSet) {
-        return {
-          step: 'ASK_SET_NUMBER',
-          exerciseName: existingSameNameEx.exerciseName,
-          targetExerciseId: existingSameNameEx.id,
-          setNumber: nextInferredSet,
-          weight: parsedWeight,
-          reps: parsedReps,
-          unit,
-          originalTranscript: rawTranscript,
-          questionPrompt: `You already logged ${existingSameNameEx.exerciseName}. Is this set ${nextInferredSet}?`,
-          options: [
-            { label: `Yes, Set ${nextInferredSet}`, action: 'CONFIRM', value: nextInferredSet },
-            { label: 'Specify another set', action: 'CORRECT' },
-            { label: 'Cancel', action: 'DISMISS' },
-          ],
-        };
-      }
 
       // If user specifies a set number that ALREADY EXISTS, ask before overwriting!
       const setAlreadyExists = existingSameNameEx.sets.find((s) => s.setNumber === targetSetNum);

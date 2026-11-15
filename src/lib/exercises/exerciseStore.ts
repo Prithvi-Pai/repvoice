@@ -32,6 +32,109 @@ export function toTitleCase(str: string): string {
 }
 
 /**
+ * Robust canonical exercise comparison function.
+ * Matches exercises across aliases, speech variations, singular/plural, and canonical groupings.
+ */
+export function areExercisesMatching(
+  nameA: string,
+  nameB: string,
+  customAliases: Record<string, string> = {}
+): boolean {
+  if (!nameA || !nameB) return false;
+  const cleanA = nameA.trim();
+  const cleanB = nameB.trim();
+  if (cleanA.toLowerCase() === cleanB.toLowerCase()) return true;
+
+  const normA = normalizeAliasText(cleanA);
+  const normB = normalizeAliasText(cleanB);
+  if (normA === normB) return true;
+
+  // Check custom user aliases
+  const customA = customAliases[normA] || cleanA;
+  const customB = customAliases[normB] || cleanB;
+  if (customA.toLowerCase() === customB.toLowerCase()) return true;
+
+  // Stemming / plural normalization across words (e.g. raises -> raise, presses -> press, flies -> fly)
+  const stripPlural = (s: string) => {
+    return s
+      .split(' ')
+      .map((w) => {
+        if (w.endsWith('ies')) return w.slice(0, -3) + 'y';
+        if (w.endsWith('sses') || w.endsWith('ches') || w.endsWith('shes') || w.endsWith('xes')) return w.slice(0, -2);
+        if (w.endsWith('s') && !w.endsWith('ss')) return w.slice(0, -1);
+        return w;
+      })
+      .join(' ');
+  };
+  const stemA = stripPlural(normA);
+  const stemB = stripPlural(normB);
+  if (stemA && stemB && stemA === stemB) return true;
+
+  // Bench press family matching: "bench press", "barbell bench press", "flat bench press", "flat bench", "bench"
+  const isBenchFamily = (name: string) => {
+    const lower = name.toLowerCase();
+    return (
+      /\bbench\b/i.test(lower) &&
+      !/\bincline\b/i.test(lower) &&
+      !/\bdecline\b/i.test(lower) &&
+      !/\bdumbbell\b/i.test(lower) &&
+      !/\bdb\b/i.test(lower) &&
+      !/\bclose\s*grip\b/i.test(lower)
+    );
+  };
+  if (isBenchFamily(cleanA) && isBenchFamily(cleanB)) {
+    return true;
+  }
+
+  // Barbell Squat / Squat family
+  const isSquatFamily = (name: string) => {
+    const lower = name.toLowerCase();
+    return (
+      /\bsquat\b/i.test(lower) &&
+      !/\bfront\b/i.test(lower) &&
+      !/\bhack\b/i.test(lower) &&
+      !/\bgoblet\b/i.test(lower) &&
+      !/\bsplit\b/i.test(lower)
+    );
+  };
+  if (isSquatFamily(cleanA) && isSquatFamily(cleanB)) {
+    return true;
+  }
+
+  // Deadlift / Conventional Deadlift
+  const isDeadliftFamily = (name: string) => {
+    const lower = name.toLowerCase();
+    return (
+      /\bdeadlift\b/i.test(lower) &&
+      !/\bromanian\b/i.test(lower) &&
+      !/\brdl\b/i.test(lower) &&
+      !/\bsumo\b/i.test(lower) &&
+      !/\bstiff\b/i.test(lower)
+    );
+  };
+  if (isDeadliftFamily(cleanA) && isDeadliftFamily(cleanB)) {
+    return true;
+  }
+
+  return false;
+}
+
+/**
+ * Searches active workout exercises to find a matching movement.
+ * Returns the matching exercise's index in the array, or -1 if not found.
+ */
+export function findMatchingExerciseIndex(
+  exercises: { exerciseName: string }[],
+  exerciseName: string,
+  customAliases: Record<string, string> = {}
+): number {
+  if (!exercises || exercises.length === 0 || !exerciseName) return -1;
+  return exercises.findIndex((ex) =>
+    areExercisesMatching(ex.exerciseName, exerciseName, customAliases)
+  );
+}
+
+/**
  * Retrieves custom aliases saved locally in the browser
  */
 export function getLocalCustomAliases(): Record<string, string> {

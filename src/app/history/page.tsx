@@ -325,13 +325,22 @@ export default function HistoryPage() {
               Showing date: <strong className="text-white">{formatLocalDateLabel(selectedDateKey)}</strong>
             </span>
           </div>
-          <button
-            onClick={() => setSelectedDateKey(null)}
-            className="px-2.5 py-1 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-white text-[11px] font-bold flex items-center gap-1 transition"
-          >
-            <X className="h-3 w-3" />
-            <span>Show Today & Yesterday</span>
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setShowCalendarModal(true)}
+              className="px-2.5 py-1 rounded-lg bg-zinc-800 hover:bg-zinc-750 text-zinc-300 hover:text-white text-[11px] font-bold flex items-center gap-1 transition"
+            >
+              <Calendar className="h-3 w-3" />
+              <span>Change</span>
+            </button>
+            <button
+              onClick={() => setSelectedDateKey(null)}
+              className="px-2.5 py-1 rounded-lg bg-zinc-800 hover:bg-zinc-750 text-zinc-300 hover:text-white text-[11px] font-bold flex items-center gap-1 transition"
+            >
+              <X className="h-3 w-3" />
+              <span>Clear Filter</span>
+            </button>
+          </div>
         </div>
       )}
 
@@ -410,18 +419,26 @@ export default function HistoryPage() {
             const filtered = filterWorkoutsBySpecificDate(workouts, selectedDateKey);
             if (filtered.length === 0) {
               return (
-                <div className="py-12 text-center rounded-3xl bg-zinc-900/40 border border-dashed border-zinc-800 p-6 space-y-2">
+                <div className="py-12 text-center rounded-3xl bg-zinc-900/40 border border-dashed border-zinc-800 p-6 space-y-3">
                   <Calendar className="h-8 w-8 text-zinc-600 mx-auto" />
-                  <h3 className="font-bold text-white text-sm">No workouts logged on this date.</h3>
+                  <h3 className="font-bold text-white text-sm">No workouts recorded on this date.</h3>
                   <p className="text-xs text-zinc-400">
                     You did not record any training sessions on {formatLocalDateLabel(selectedDateKey)}.
                   </p>
-                  <button
-                    onClick={() => setSelectedDateKey(null)}
-                    className="mt-2 text-xs font-bold text-white hover:underline"
-                  >
-                    Return to Today & Yesterday
-                  </button>
+                  <div className="flex items-center justify-center gap-2 pt-1">
+                    <button
+                      onClick={() => setShowCalendarModal(true)}
+                      className="px-3 py-1.5 rounded-xl bg-zinc-850 hover:bg-zinc-800 text-zinc-300 text-xs font-bold transition border border-zinc-750"
+                    >
+                      Choose Another Date
+                    </button>
+                    <button
+                      onClick={() => setSelectedDateKey(null)}
+                      className="px-3 py-1.5 rounded-xl bg-white hover:bg-zinc-200 text-black text-xs font-extrabold transition shadow-sm"
+                    >
+                      Clear Filter
+                    </button>
+                  </div>
                 </div>
               );
             }
@@ -508,6 +525,7 @@ export default function HistoryPage() {
       {showCalendarModal && (
         <HistoryCalendarModal
           currentSelectedDateKey={selectedDateKey}
+          workouts={workouts}
           onSelectDate={setSelectedDateKey}
           onClose={() => setShowCalendarModal(false)}
         />

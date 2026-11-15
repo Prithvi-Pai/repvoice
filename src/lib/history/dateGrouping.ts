@@ -87,3 +87,16 @@ export function formatLocalDateLabel(dateKey: string): string {
     year: 'numeric',
   });
 }
+
+/**
+ * Generates the automatic default workout title using the workout completion date and day:
+ * Format: "Workout – Sunday, 15 November 2026"
+ */
+export function generateDefaultWorkoutName(dateOrTimestamp: Date | string | number = new Date()): string {
+  const d = new Date(dateOrTimestamp);
+  const dayName = d.toLocaleDateString('en-US', { weekday: 'long' });
+  const dayNum = d.getDate();
+  const monthName = d.toLocaleDateString('en-US', { month: 'long' });
+  const year = d.getFullYear();
+  return `Workout – ${dayName}, ${dayNum} ${monthName} ${year}`;
+}
