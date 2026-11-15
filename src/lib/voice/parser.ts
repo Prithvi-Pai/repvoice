@@ -1,4 +1,4 @@
-import { ParsedVoiceEntry, ParsedSet, WeightUnit } from '@/types';
+import { ParsedVoiceEntry, ParsedSet, WeightUnit } from '../../types';
 
 // Common exercises for fuzzy matching and normalization (sorted longest to shortest)
 export const COMMON_EXERCISES = [
@@ -9,21 +9,35 @@ export const COMMON_EXERCISES = [
   'Incline Bench Press',
   'Decline Bench Press',
   'Close Grip Bench Press',
+  'Barbell Bench Press',
+  'Flat Bench Press',
   'Bench Press',
+  'Dumbbell Chest Press',
+  'Machine Chest Press',
+  'Cable Chest Press',
+  'Chest Press',
   'Romanian Deadlift',
   'Sumo Deadlift',
   'Trap Bar Deadlift',
+  'Zercher Deadlift',
   'Deadlift',
   'Bulgarian Split Squats',
+  'Barbell Squat',
+  'Back Squat',
+  'Zercher Squat',
   'Front Squat',
   'Hack Squat',
   'Goblet Squat',
   'Squat',
   'Overhead Press',
   'Seated Dumbbell Shoulder Press',
+  'Dumbbell Shoulder Press',
   'Shoulder Press',
   'Military Press',
   'Arnold Press',
+  'Landmine Press',
+  'Svend Press',
+  'Bent Over Row',
   'Barbell Row',
   'Dumbbell Row',
   'Cable Row',
@@ -33,6 +47,7 @@ export const COMMON_EXERCISES = [
   'Pull Ups',
   'Chin Ups',
   'Dips',
+  'Spider Curl',
   'Incline Dumbbell Curls',
   'Preacher Curls',
   'Hammer Curls',
@@ -77,8 +92,6 @@ export function normalizeSpokenNumbers(text: string): string {
   };
 
   let lower = text.toLowerCase()
-    .replace(/\bto\b/g, '2')
-    .replace(/\btoo\b/g, '2')
     .replace(/\bfor\b/g, 'for')
     .replace(/\bat\b/g, 'at');
 

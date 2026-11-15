@@ -1,5 +1,7 @@
-import { Workout, WorkoutExercise, WorkoutSet, UserProfile, SaveWorkoutResult } from '@/types';
+import { Workout, WorkoutExercise, WorkoutSet, UserProfile, SaveWorkoutResult } from '../types';
 import { getSupabaseClient } from './supabase/client';
+import { evaluateWorkoutPRs, getPersonalRecords, savePersonalRecords } from './records/personalRecordEngine';
+import { calculateEstimatedCalories } from './analytics/metricsEngine';
 
 const LOCAL_STORAGE_ACTIVE_WORKOUT = 'repvoice_active_workout';
 const LOCAL_STORAGE_HISTORY = 'repvoice_history';
@@ -7,8 +9,16 @@ const LOCAL_STORAGE_PROFILE = 'repvoice_profile';
 
 const DEFAULT_PROFILE: UserProfile = {
   id: 'guest_user',
-  displayName: 'Gym Athlete',
-  preferredUnit: 'kg',
+  displayName: 'Alex Rivera',
+  preferredUnit: 'lbs',
+  recognitionMode: 'continuous',
+  spokenConfirmations: true,
+  beepOnRecord: true,
+  microphoneSensitivity: 'aggressive',
+  defaultRestTimerSeconds: 90,
+  tier: 'ultra',
+  avatarUrl:
+    'https://lh3.googleusercontent.com/aida-public/AB6AXuClVv5wgXLrvyRzdO7Eik3r5l8aISphqWp3hold4ED1IKJ7-NhddH-_U_1b4pLpvodGjpHHYXujZcKxS_GERyM-_wguqO5mZKdhuxV7TTJccItS4cw9OVX5Ue2k58i_844QOF_Z_VQf11JKvHGtSWkaBabR9cOPddr2WQ4UzOct0hXePTEuxSps5K74srBgsYKsa-kCy_SYc4X-bdudvAR89C1fTD2tBzyoimXs7dk',
 };
 
 // Profile storage
@@ -32,7 +42,14 @@ export function getActiveWorkout(): Workout | null {
   if (typeof window === 'undefined') return null;
   try {
     const raw = localStorage.getItem(LOCAL_STORAGE_ACTIVE_WORKOUT);
-    return raw ? JSON.parse(raw) : null;
+    if (!raw) return null;
+    const parsed: Workout = JSON.parse(raw);
+    if (parsed && parsed.completedAt) {
+      // Completed workout must never be treated as active in-progress
+      localStorage.removeItem(LOCAL_STORAGE_ACTIVE_WORKOUT);
+      return null;
+    }
+    return parsed;
   } catch {
     return null;
   }
@@ -65,6 +82,14 @@ export async function getWorkoutHistory(): Promise<{ workouts: Workout[]; source
             started_at,
             completed_at,
             notes,
+            duration_seconds,
+            avg_rest_seconds,
+            calories_burned,
+            total_volume,
+            total_sets,
+            voice_sets_count,
+            snapshot_url,
+            snapshot_location,
             workout_exercises (
               id,
               exercise_name,
@@ -76,7 +101,11 @@ export async function getWorkoutHistory(): Promise<{ workouts: Workout[]; source
                 reps,
                 unit,
                 is_completed,
-                rpe
+                rpe,
+                is_voice_logged,
+                duration_seconds,
+                started_at,
+                completed_at
               )
             )
           `)
@@ -101,6 +130,14 @@ export async function getWorkoutHistory(): Promise<{ workouts: Workout[]; source
               startedAt: w.started_at,
               completedAt: w.completed_at,
               notes: w.notes,
+              durationSeconds: w.duration_seconds ? Number(w.duration_seconds) : undefined,
+              avgRestSeconds: w.avg_rest_seconds ? Number(w.avg_rest_seconds) : undefined,
+              caloriesBurned: w.calories_burned ? Number(w.calories_burned) : undefined,
+              totalVolume: w.total_volume ? Number(w.total_volume) : undefined,
+              totalSets: w.total_sets ? Number(w.total_sets) : undefined,
+              voiceSetsCount: w.voice_sets_count ? Number(w.voice_sets_count) : undefined,
+              snapshotUrl: w.snapshot_url || undefined,
+              snapshotLocation: w.snapshot_location || undefined,
               exercises: sortedExercises.map((we: any) => {
                 const sortedSets = (we.workout_sets || []).sort(
                   (a: any, b: any) => (a.set_number ?? 0) - (b.set_number ?? 0)
@@ -116,6 +153,10 @@ export async function getWorkoutHistory(): Promise<{ workouts: Workout[]; source
                     unit: ws.unit,
                     isCompleted: ws.is_completed,
                     rpe: ws.rpe ? Number(ws.rpe) : undefined,
+                    isVoiceLogged: ws.is_voice_logged ?? true,
+                    durationSeconds: ws.duration_seconds ? Number(ws.duration_seconds) : undefined,
+                    startedAt: ws.started_at || undefined,
+                    completedAt: ws.completed_at || undefined,
                   })),
                 };
               }),
@@ -174,10 +215,37 @@ export function generateUUID(): string {
 
 export async function saveFinishedWorkout(workout: Workout): Promise<SaveWorkoutResult> {
   const workoutId = isValidUUID(workout.id) ? workout.id : generateUUID();
+
+  // Compute session telemetry
+  let totalVolume = 0;
+  let totalSets = 0;
+  let voiceSetsCount = 0;
+
+  for (const ex of workout.exercises) {
+    for (const s of ex.sets) {
+      if (s.isCompleted) {
+        totalSets++;
+        totalVolume += (s.weight || 0) * (s.reps || 0);
+        if (s.isVoiceLogged !== false) voiceSetsCount++;
+      }
+    }
+  }
+
+  const startMs = new Date(workout.startedAt).getTime();
+  const endMs = workout.completedAt ? new Date(workout.completedAt).getTime() : Date.now();
+  const durationSeconds = workout.durationSeconds || Math.max(1, Math.round((endMs - startMs) / 1000));
+  const caloriesBurned = workout.caloriesBurned || calculateEstimatedCalories(durationSeconds, totalVolume, totalSets);
+
   const finishedWorkout: Workout = {
     ...workout,
     id: workoutId,
     completedAt: workout.completedAt || new Date().toISOString(),
+    durationSeconds,
+    avgRestSeconds: workout.avgRestSeconds || 64,
+    caloriesBurned,
+    totalVolume: Math.round(totalVolume),
+    totalSets,
+    voiceSetsCount,
   };
 
   const client = getSupabaseClient();
@@ -203,6 +271,14 @@ export async function saveFinishedWorkout(workout: Workout): Promise<SaveWorkout
             notes: finishedWorkout.notes || null,
             started_at: finishedWorkout.startedAt,
             completed_at: finishedWorkout.completedAt,
+            duration_seconds: finishedWorkout.durationSeconds,
+            avg_rest_seconds: finishedWorkout.avgRestSeconds,
+            calories_burned: finishedWorkout.caloriesBurned,
+            total_volume: finishedWorkout.totalVolume,
+            total_sets: finishedWorkout.totalSets,
+            voice_sets_count: finishedWorkout.voiceSetsCount,
+            snapshot_url: finishedWorkout.snapshotUrl || null,
+            snapshot_location: finishedWorkout.snapshotLocation || null,
           },
           { onConflict: 'id' }
         )
@@ -241,6 +317,10 @@ export async function saveFinishedWorkout(workout: Workout): Promise<SaveWorkout
             unit: s.unit || 'kg',
             is_completed: s.isCompleted ?? true,
             rpe: s.rpe ? Number(s.rpe) : null,
+            is_voice_logged: s.isVoiceLogged ?? true,
+            duration_seconds: s.durationSeconds || null,
+            started_at: s.startedAt || null,
+            completed_at: s.completedAt || null,
           }));
 
           const { error: setsError } = await client
@@ -250,6 +330,14 @@ export async function saveFinishedWorkout(workout: Workout): Promise<SaveWorkout
           if (setsError) throw new Error(`Sets insert failed: ${setsError.message}`);
         }
       }
+
+      // Evaluate PRs asynchronously
+      getPersonalRecords().then((existingPRs) => {
+        const newPRs = evaluateWorkoutPRs(finishedWorkout, existingPRs);
+        if (newPRs.length > 0) {
+          savePersonalRecords(newPRs).catch((err) => console.warn('PR evaluation save error:', err));
+        }
+      });
 
       // Only remove from active workout once Supabase confirms success
       saveActiveWorkout(null);
@@ -269,7 +357,6 @@ export async function saveFinishedWorkout(workout: Workout): Promise<SaveWorkout
       };
     } catch (e: any) {
       console.error('Supabase save error:', e);
-      // DO NOT clear active workout here so user never loses workout progress on failed save
       return {
         success: false,
         error: e?.message || 'Database error while saving workout to Supabase.',
@@ -279,15 +366,42 @@ export async function saveFinishedWorkout(workout: Workout): Promise<SaveWorkout
   }
 
   // If Supabase client is not available, delegate to saveWorkoutLocally
-  return saveWorkoutLocally(workout);
+  return saveWorkoutLocally(finishedWorkout);
 }
 
 export function saveWorkoutLocally(workout: Workout): SaveWorkoutResult {
   const workoutId = isValidUUID(workout.id) ? workout.id : generateUUID();
+
+  // Compute session telemetry if missing
+  let totalVolume = 0;
+  let totalSets = 0;
+  let voiceSetsCount = 0;
+
+  for (const ex of workout.exercises) {
+    for (const s of ex.sets) {
+      if (s.isCompleted) {
+        totalSets++;
+        totalVolume += (s.weight || 0) * (s.reps || 0);
+        if (s.isVoiceLogged !== false) voiceSetsCount++;
+      }
+    }
+  }
+
+  const startMs = new Date(workout.startedAt).getTime();
+  const endMs = workout.completedAt ? new Date(workout.completedAt).getTime() : Date.now();
+  const durationSeconds = workout.durationSeconds || Math.max(1, Math.round((endMs - startMs) / 1000));
+  const caloriesBurned = workout.caloriesBurned || calculateEstimatedCalories(durationSeconds, totalVolume, totalSets);
+
   const finishedWorkout: Workout = {
     ...workout,
     id: workoutId,
     completedAt: workout.completedAt || new Date().toISOString(),
+    durationSeconds,
+    avgRestSeconds: workout.avgRestSeconds || 64,
+    caloriesBurned,
+    totalVolume: Math.round(totalVolume),
+    totalSets,
+    voiceSetsCount,
   };
 
   try {
@@ -295,6 +409,15 @@ export function saveWorkoutLocally(workout: Workout): SaveWorkoutResult {
     const updated = [finishedWorkout, ...local.filter((w) => w.id !== workout.id && w.id !== workoutId)];
     localStorage.setItem(LOCAL_STORAGE_HISTORY, JSON.stringify(updated));
     saveActiveWorkout(null);
+
+    // Evaluate PRs locally
+    getPersonalRecords().then((existingPRs) => {
+      const newPRs = evaluateWorkoutPRs(finishedWorkout, existingPRs);
+      if (newPRs.length > 0) {
+        savePersonalRecords(newPRs).catch((err) => console.warn('Local PR save error:', err));
+      }
+    });
+
     return {
       success: true,
       persistedTo: 'local_fallback',
@@ -329,4 +452,36 @@ export async function deleteWorkoutFromHistory(workoutId: string): Promise<boole
   }
 
   return deletedFromSupabase;
+}
+
+/**
+ * Updates the title of a workout in both Supabase and localStorage.
+ */
+export async function updateWorkoutTitle(workoutId: string, newTitle: string): Promise<boolean> {
+  const cleanTitle = newTitle.trim();
+  if (!cleanTitle) return false;
+
+  const client = getSupabaseClient();
+  let updatedInSupabase = false;
+
+  if (client) {
+    try {
+      const { error } = await client
+        .from('workouts')
+        .update({ title: cleanTitle })
+        .eq('id', workoutId);
+      if (!error) updatedInSupabase = true;
+    } catch (e) {
+      console.error('Failed to update workout title in Supabase:', e);
+    }
+  }
+
+  // Also update in local storage
+  if (typeof window !== 'undefined') {
+    const local = getLocalWorkoutHistory();
+    const updated = local.map((w) => (w.id === workoutId ? { ...w, title: cleanTitle } : w));
+    localStorage.setItem(LOCAL_STORAGE_HISTORY, JSON.stringify(updated));
+  }
+
+  return true;
 }

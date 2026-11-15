@@ -67,8 +67,8 @@ export function RestTimer({ onClose }: RestTimerProps) {
   return (
     <div className="w-full rounded-2xl bg-zinc-900 border border-zinc-800 p-4 shadow-xl">
       <div className="flex items-center justify-between pb-3 border-b border-zinc-800">
-        <div className="flex items-center gap-2 text-lime-400 font-bold text-sm tracking-wide">
-          <Timer className="h-4 w-4 animate-pulse text-lime-400" />
+        <div className="flex items-center gap-2 text-white font-bold text-sm tracking-wide">
+          <Timer className="h-4 w-4 animate-pulse text-zinc-300" />
           <span>Rest Timer</span>
         </div>
         {onClose && (
@@ -87,7 +87,7 @@ export function RestTimer({ onClose }: RestTimerProps) {
         </div>
         <div className="w-full bg-zinc-800 h-2 rounded-full mt-3 overflow-hidden">
           <div
-            className="bg-lime-400 h-full transition-all duration-300 shadow-[0_0_10px_rgba(163,230,53,0.5)]"
+            className="bg-white h-full transition-all duration-300 shadow-[0_0_10px_rgba(255,255,255,0.4)]"
             style={{ width: `${Math.min(100, progress)}%` }}
           />
         </div>
@@ -101,7 +101,7 @@ export function RestTimer({ onClose }: RestTimerProps) {
             onClick={() => setPreset(sec)}
             className={`py-1.5 rounded-lg text-xs font-bold border transition ${
               initialSeconds === sec
-                ? 'bg-lime-400/20 text-lime-400 border-lime-400/50 shadow-[0_0_10px_rgba(163,230,53,0.2)]'
+                ? 'bg-white text-black border-white shadow-[0_0_10px_rgba(255,255,255,0.2)]'
                 : 'bg-zinc-800 text-zinc-300 border-zinc-700 hover:bg-zinc-700'
             }`}
           >
@@ -122,7 +122,7 @@ export function RestTimer({ onClose }: RestTimerProps) {
 
         <button
           onClick={() => setIsActive(!isActive)}
-          className="px-6 py-2.5 rounded-xl bg-lime-400 text-black font-extrabold text-sm flex items-center gap-1.5 shadow-[0_0_15px_rgba(163,230,53,0.3)] active:scale-95 transition"
+          className="px-6 py-2.5 rounded-xl bg-white text-black font-extrabold text-sm flex items-center gap-1.5 shadow-[0_0_15px_rgba(255,255,255,0.2)] active:scale-95 transition"
         >
           {isActive ? <Pause className="h-4 w-4 fill-black" /> : <Play className="h-4 w-4 fill-black" />}
           <span>{isActive ? 'Pause' : 'Resume'}</span>

@@ -3,8 +3,8 @@ import {
   WeightUnit,
   ParsedSet,
   PendingExerciseConfirmation,
-} from '@/types';
-import { toTitleCase } from '@/lib/exercises/exerciseStore';
+} from '../../types';
+import { toTitleCase } from '../exercises/exerciseStore';
 
 /**
  * Common exercise aliases mapping spoken forms to canonical exercise names.
@@ -27,18 +27,32 @@ export const EXERCISE_ALIASES: Record<string, string> = {
   'flat db bench press': 'Flat Dumbbell Bench Press',
   'dumbbell bench press': 'Dumbbell Bench Press',
   'dumbbell bench': 'Dumbbell Bench Press',
-  'dumbbell chest press': 'Dumbbell Bench Press',
   'db bench press': 'Dumbbell Bench Press',
   'db bench': 'Dumbbell Bench Press',
   'decline bench press': 'Decline Bench Press',
   'decline bench': 'Decline Bench Press',
   'close grip bench press': 'Close Grip Bench Press',
   'close grip bench': 'Close Grip Bench Press',
-  'barbell bench press': 'Bench Press',
-  'flat bench press': 'Bench Press',
-  'flat bench': 'Bench Press',
+  'barbell bench press': 'Barbell Bench Press',
+  'barbell bench': 'Barbell Bench Press',
+  'flat bench press': 'Flat Bench Press',
+  'flat bench': 'Flat Bench Press',
   'bench press': 'Bench Press',
   'bench': 'Bench Press',
+
+  // Chest Press (distinct from Bench Press - preserve exact spoken words)
+  'dumbbell chest press': 'Dumbbell Chest Press',
+  'dumbbell chest presses': 'Dumbbell Chest Press',
+  'machine chest press': 'Machine Chest Press',
+  'machine chest presses': 'Machine Chest Press',
+  'cable chest press': 'Cable Chest Press',
+  'cable chest presses': 'Cable Chest Press',
+  'incline chest press': 'Incline Chest Press',
+  'seated chest press': 'Seated Chest Press',
+  'chest press': 'Chest Press',
+  'chest presses': 'Chest Press',
+  'floor press': 'Floor Press',
+  'pin press': 'Pin Press',
 
   // Rows
   'dumbbell rows': 'Dumbbell Row',
@@ -49,8 +63,10 @@ export const EXERCISE_ALIASES: Record<string, string> = {
   'db row': 'Dumbbell Row',
   'barbell rows': 'Barbell Row',
   'barbell row': 'Barbell Row',
-  'bent over rows': 'Barbell Row',
-  'bent over row': 'Barbell Row',
+  'bent over rows': 'Bent Over Row',
+  'bent over row': 'Bent Over Row',
+  'pendlay rows': 'Pendlay Row',
+  'pendlay row': 'Pendlay Row',
   'bb rows': 'Barbell Row',
   'bb row': 'Barbell Row',
   'seated cable rows': 'Seated Row',
@@ -94,35 +110,47 @@ export const EXERCISE_ALIASES: Record<string, string> = {
   'trap bar deadlifts': 'Trap Bar Deadlift',
   'trap bar deadlift': 'Trap Bar Deadlift',
   'hex bar deadlift': 'Trap Bar Deadlift',
+  'zercher deadlift': 'Zercher Deadlift',
+  'stiff leg deadlift': 'Stiff Leg Deadlift',
   'deadlifts': 'Deadlift',
   'deadlift': 'Deadlift',
 
   // Squats
   'bulgarian split squats': 'Bulgarian Split Squats',
   'bulgarian split squat': 'Bulgarian Split Squats',
-  'split squats': 'Bulgarian Split Squats',
-  'split squat': 'Bulgarian Split Squats',
+  'split squats': 'Split Squats',
+  'split squat': 'Split Squat',
   'front squats': 'Front Squat',
   'front squat': 'Front Squat',
   'hack squats': 'Hack Squat',
   'hack squat': 'Hack Squat',
   'goblet squats': 'Goblet Squat',
   'goblet squat': 'Goblet Squat',
-  'barbell squats': 'Squat',
-  'barbell squat': 'Squat',
-  'back squats': 'Squat',
-  'back squat': 'Squat',
+  'zercher squats': 'Zercher Squat',
+  'zercher squat': 'Zercher Squat',
+  'box squats': 'Box Squat',
+  'box squat': 'Box Squat',
+  'belt squats': 'Belt Squat',
+  'belt squat': 'Belt Squat',
+  'barbell squats': 'Barbell Squat',
+  'barbell squat': 'Barbell Squat',
+  'back squats': 'Back Squat',
+  'back squat': 'Back Squat',
   'squats': 'Squat',
   'squat': 'Squat',
 
-  // Shoulders
+  // Shoulders & Presses
   'seated dumbbell shoulder press': 'Seated Dumbbell Shoulder Press',
   'seated dumbbell press': 'Seated Dumbbell Shoulder Press',
-  'dumbbell shoulder press': 'Shoulder Press',
+  'dumbbell shoulder press': 'Dumbbell Shoulder Press',
   'overhead press': 'Overhead Press',
   'military press': 'Military Press',
   'shoulder press': 'Shoulder Press',
   'arnold press': 'Arnold Press',
+  'landmine press': 'Landmine Press',
+  'landmine presses': 'Landmine Press',
+  'svend press': 'Svend Press',
+  'svend presses': 'Svend Press',
   'ohp': 'Overhead Press',
   'lateral raises': 'Lateral Raises',
   'lateral raise': 'Lateral Raises',
@@ -140,6 +168,8 @@ export const EXERCISE_ALIASES: Record<string, string> = {
   'shrug': 'Shrugs',
 
   // Arms: Biceps & Triceps
+  'spider curls': 'Spider Curl',
+  'spider curl': 'Spider Curl',
   'incline dumbbell curls': 'Incline Dumbbell Curls',
   'incline dumbbell curl': 'Incline Dumbbell Curls',
   'preacher curls': 'Preacher Curls',
@@ -164,6 +194,7 @@ export const EXERCISE_ALIASES: Record<string, string> = {
   'overhead tricep extension': 'Overhead Tricep Extension',
   'skull crushers': 'Skull Crushers',
   'skull crusher': 'Skull Crushers',
+  'jm press': 'JM Press',
 
   // Legs & Core
   'leg press': 'Leg Press',
@@ -348,6 +379,16 @@ export function parseWorkoutCommand(
   }
 
   // --- Step 3: Detect Standalone Control Commands ---
+  // A-0) Start workout command (from Home screen)
+  if (/^(?:start|begin)\s+(?:a\s+)?(?:workout|session)(?:\s+(.+))?$/i.test(working)) {
+    const match = working.match(/^(?:start|begin)\s+(?:a\s+)?(?:workout|session)(?:\s+(.+))?$/i);
+    return {
+      type: 'START_WORKOUT',
+      title: match && match[1] ? toTitleCase(match[1].trim()) : undefined,
+      rawTranscript: text,
+    };
+  }
+
   // A) Finish workout command
   if (/\b(?:finish|end|complete|done)\s+(?:workout|session)\b/i.test(working)) {
     return {
@@ -363,6 +404,55 @@ export function parseWorkoutCommand(
   if (isSetDoneCommand && !hasNumbersOrReps) {
     return {
       type: 'SET_DONE',
+      rawTranscript: text,
+    };
+  }
+
+  // C) Start set command (activates per-set timer)
+  if (/\b(?:start|begin)\s+(?:the\s+)?set\b/i.test(working)) {
+    return {
+      type: 'START_SET',
+      rawTranscript: text,
+    };
+  }
+
+  // C-2) Rest timer command (e.g. "rest", "rest timer", "rest timer turn on", "turn on rest timer", "start rest", "rest 90 sec")
+  const isRestTimerCommand =
+    /^(?:rest|rest\s+timer|take\s+a\s+rest|start\s+rest(?:\s+timer)?|turn\s+on\s+rest(?:\s+timer)?|rest\s+timer\s+turn\s+on|rest\s+timer\s+on)(?:\s+(?:for\s+)?(\d+)\s*(?:s|sec|seconds?|min|minutes?)?)?$/i.test(working) ||
+    /^(?:turn\s+on|start|begin)\s+(?:the\s+)?rest\s*timer$/i.test(working);
+
+  if (isRestTimerCommand) {
+    let parsedSeconds: number | undefined;
+    const secMatch = working.match(/\b(\d+)\s*(?:s|sec|seconds?)\b/i);
+    const minMatch = working.match(/\b(\d+)\s*(?:m|min|minutes?)\b/i);
+    if (secMatch) {
+      parsedSeconds = parseInt(secMatch[1], 10);
+    } else if (minMatch) {
+      parsedSeconds = parseInt(minMatch[1], 10) * 60;
+    }
+    return {
+      type: 'START_REST',
+      seconds: parsedSeconds,
+      rawTranscript: text,
+    };
+  }
+
+  // D) Undo last entry command
+  if (/\b(?:undo|undo\s+that|undo\s+last|revert|undo\s+the\s+last\s+entry)\b/i.test(working)) {
+    return {
+      type: 'UNDO_LAST',
+      rawTranscript: text,
+    };
+  }
+
+  // E) Modify last set command (e.g. "Change my last set to 35 kilos")
+  if (/\b(?:change|modify)\s+(?:my\s+)?last\s+set\b/i.test(working)) {
+    const wMatch = working.match(/(\d+(?:\.\d+)?)\s*(?:kg|kilos?|lbs?|pounds?)/i);
+    const rMatch = working.match(/(\d+)\s*(?:reps?|repetitions?)/i);
+    return {
+      type: 'MODIFY_LAST',
+      weight: wMatch ? parseFloat(wMatch[1]) : undefined,
+      reps: rMatch ? parseInt(rMatch[1], 10) : undefined,
       rawTranscript: text,
     };
   }
@@ -535,6 +625,14 @@ export function parseWorkoutCommand(
     }
   }
 
+  // If setCount was matched (e.g. "10 sets") but reps was not specified:
+  // In spoken gym logging, "10 reps" is frequently transcribed as "10 sets", or athletes say "10 sets" meaning 10 reps.
+  // If count >= 5 (or when there are no other numbers), treat it as reps.
+  if (parsedReps === undefined && setCount !== undefined && setCount >= 5) {
+    parsedReps = setCount;
+    setCount = undefined;
+  }
+
   // --- Step 9: Detect Unrecognized Spoken Exercise Candidate ---
   // If no known exercise matched, look for leftover non-filler words
   let detectedUnknownExercise: string | undefined;
@@ -572,14 +670,14 @@ export function parseWorkoutCommand(
   // 10b. Unknown exercise candidate detected! Trigger CONFIRM_EXERCISE prompt
   if (detectedUnknownExercise) {
     const suggested = toTitleCase(detectedUnknownExercise);
-    const resolvedWeight = isSameWeight ? (lastKnownWeight > 0 ? lastKnownWeight : 0) : parsedWeight;
+    const resolvedWeight = isSameWeight ? (lastKnownWeight > 0 ? lastKnownWeight : undefined) : parsedWeight;
 
     return {
       type: 'CONFIRM_EXERCISE',
       spokenPhrase: detectedUnknownExercise,
       suggestedExercise: suggested,
-      weight: resolvedWeight !== undefined ? resolvedWeight : (lastKnownWeight > 0 ? lastKnownWeight : undefined),
-      reps: parsedReps !== undefined ? parsedReps : 10,
+      weight: resolvedWeight,
+      reps: parsedReps,
       unit,
       setNumber: explicitSetNumber,
       setCount,
@@ -591,21 +689,29 @@ export function parseWorkoutCommand(
   // 10c. Confident known exercise detected with sets/weights
   const targetExercise = detectedExercise || currentExerciseName;
 
+  const isBodyweightEx =
+    Boolean(targetExercise) &&
+    (/\b(?:pull[\s-]*ups?|chin[\s-]*ups?|push[\s-]*ups?|dips?|sit[\s-]*ups?|crunches?|planks?|lunges?|burpees?|jumping\s+jacks|mountain\s+climbers|leg\s+raises|muscle[\s-]*ups?)\b/i.test(
+      targetExercise!
+    ) || targetExercise!.toLowerCase().includes('bodyweight'));
+
   let finalWeight = parsedWeight;
   if (isSameWeight) {
     finalWeight = lastKnownWeight > 0 ? lastKnownWeight : 0;
-  } else if (finalWeight === undefined && targetExercise && currentExerciseName === targetExercise && lastKnownWeight > 0) {
+  } else if (finalWeight === undefined && isBodyweightEx) {
+    finalWeight = 0;
+  } else if (finalWeight === undefined && targetExercise && currentExerciseName === targetExercise && lastKnownWeight > 0 && parsedReps !== undefined) {
+    // If user says "8 reps" or "another set of 8" for the active exercise, carry over last weight
     finalWeight = lastKnownWeight;
   }
 
-  const finalReps = parsedReps !== undefined ? parsedReps : 10;
+  const finalReps = parsedReps;
 
   const additionalSets: ParsedSet[] = [];
-  if (setCount && setCount > 1) {
-    const setWeight = finalWeight !== undefined ? finalWeight : lastKnownWeight || 0;
+  if (setCount && setCount > 1 && finalWeight !== undefined && finalReps !== undefined) {
     for (let i = 1; i < setCount; i++) {
       additionalSets.push({
-        weight: setWeight,
+        weight: finalWeight,
         reps: finalReps,
         unit,
       });
@@ -616,7 +722,7 @@ export function parseWorkoutCommand(
     return {
       type: 'ADD_SET',
       exercise: detectedExercise,
-      weight: finalWeight !== undefined ? finalWeight : lastKnownWeight || 0,
+      weight: finalWeight,
       reps: finalReps,
       unit,
       setNumber: explicitSetNumber,

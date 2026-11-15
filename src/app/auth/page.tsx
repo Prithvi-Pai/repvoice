@@ -15,30 +15,21 @@ import {
 } from 'lucide-react';
 import { getSupabaseClient } from '@/lib/supabase/client';
 import { getActiveWorkout } from '@/lib/storage';
-import { BottomNav } from '@/components/layout/BottomNav';
+import { useAuth } from '@/context/AuthContext';
 
 export default function AuthPage() {
   const router = useRouter();
+  const { user, signOut: authSignOut } = useAuth();
   const [mode, setMode] = useState<'signin' | 'signup'>('signin');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
-  const [currentEmail, setCurrentEmail] = useState<string | null>(null);
   const [hasActiveWorkout, setHasActiveWorkout] = useState(false);
 
   useEffect(() => {
     setHasActiveWorkout(Boolean(getActiveWorkout()));
-
-    const client = getSupabaseClient();
-    if (client) {
-      client.auth.getUser().then(({ data }) => {
-        if (data?.user?.email) {
-          setCurrentEmail(data.user.email);
-        }
-      });
-    }
   }, []);
 
   const handleAuth = async (e: React.FormEvent) => {
@@ -73,10 +64,10 @@ export default function AuthPage() {
             'Account created! A confirmation email has been sent. Please confirm before signing in.'
           );
         } else {
-          setSuccessMessage('Account created and signed in successfully!');
+          setSuccessMessage('Account created and signed in successfully! Redirecting...');
           setTimeout(() => {
-            router.push('/');
-          }, 1000);
+            router.replace('/');
+          }, 600);
         }
       } else {
         const { data, error } = await client.auth.signInWithPassword({
@@ -89,8 +80,8 @@ export default function AuthPage() {
         if (data.session) {
           setSuccessMessage('Signed in successfully! Redirecting...');
           setTimeout(() => {
-            router.push('/');
-          }, 800);
+            router.replace('/');
+          }, 500);
         }
       }
     } catch (err: any) {
@@ -105,20 +96,18 @@ export default function AuthPage() {
   };
 
   const handleSignOut = async () => {
-    const client = getSupabaseClient();
-    if (client) {
-      await client.auth.signOut();
-      setCurrentEmail(null);
-      setSuccessMessage('Signed out successfully.');
-    }
+    await authSignOut();
+    setSuccessMessage('Signed out successfully.');
   };
+
+  const currentEmail = user?.email;
 
   return (
     <div className="space-y-6 pb-12 pt-2">
       {/* Brand Header */}
       <div className="text-center space-y-2">
-        <div className="w-14 h-14 rounded-2xl bg-lime-400/10 border border-lime-400/30 text-lime-400 mx-auto flex items-center justify-center shadow-[0_0_20px_rgba(163,230,53,0.2)]">
-          <Dumbbell className="h-7 w-7 text-lime-400" />
+        <div className="w-14 h-14 rounded-2xl bg-zinc-900 border border-zinc-700 text-white mx-auto flex items-center justify-center shadow-[0_0_20px_rgba(255,255,255,0.1)]">
+          <Dumbbell className="h-7 w-7 text-white" />
         </div>
         <h1 className="text-2xl font-black text-white tracking-tight">Athlete Account</h1>
         <p className="text-xs text-zinc-400 max-w-xs mx-auto">
@@ -128,8 +117,8 @@ export default function AuthPage() {
 
       {/* Active In-Progress Workout Notice */}
       {hasActiveWorkout && (
-        <div className="p-3.5 rounded-2xl bg-lime-950/60 border border-lime-800/80 text-xs text-lime-300 flex items-center gap-2.5">
-          <Dumbbell className="h-4 w-4 text-lime-400 shrink-0" />
+        <div className="p-3.5 rounded-2xl bg-zinc-900 border border-zinc-700 text-xs text-zinc-200 flex items-center gap-2.5">
+          <Dumbbell className="h-4 w-4 text-white shrink-0" />
           <p>
             You have an active workout in progress! Signing in will keep your workout intact and allow you to sync it directly to Supabase.
           </p>
@@ -140,11 +129,11 @@ export default function AuthPage() {
       {currentEmail && (
         <div className="p-5 rounded-3xl bg-zinc-900 border border-zinc-800 space-y-4">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-full bg-lime-400/10 text-lime-400 flex items-center justify-center font-bold">
+            <div className="w-10 h-10 rounded-full bg-zinc-800 text-white flex items-center justify-center font-bold">
               {currentEmail.charAt(0).toUpperCase()}
             </div>
             <div>
-              <span className="text-[10px] uppercase font-bold text-lime-400 block">
+              <span className="text-[10px] uppercase font-bold text-zinc-400 block">
                 Currently Signed In
               </span>
               <p className="font-bold text-sm text-white">{currentEmail}</p>
@@ -154,7 +143,7 @@ export default function AuthPage() {
           <div className="flex gap-2">
             <Link
               href="/"
-              className="flex-1 py-2.5 rounded-xl bg-lime-400 hover:bg-lime-300 text-black font-extrabold text-xs flex items-center justify-center gap-1.5 transition shadow-[0_0_15px_rgba(163,230,53,0.25)]"
+              className="flex-1 py-2.5 rounded-xl bg-white hover:bg-zinc-200 text-black font-extrabold text-xs flex items-center justify-center gap-1.5 transition shadow-[0_0_15px_rgba(255,255,255,0.15)]"
             >
               <span>Back to Workout</span>
               <ArrowRight className="h-3.5 w-3.5" />
@@ -182,7 +171,7 @@ export default function AuthPage() {
               }}
               className={`py-2 rounded-lg text-xs font-bold transition flex items-center justify-center gap-1.5 ${
                 mode === 'signin'
-                  ? 'bg-zinc-800 text-lime-400 shadow'
+                  ? 'bg-zinc-800 text-white shadow'
                   : 'text-zinc-400 hover:text-white'
               }`}
             >
@@ -197,7 +186,7 @@ export default function AuthPage() {
               }}
               className={`py-2 rounded-lg text-xs font-bold transition flex items-center justify-center gap-1.5 ${
                 mode === 'signup'
-                  ? 'bg-zinc-800 text-lime-400 shadow'
+                  ? 'bg-zinc-800 text-white shadow'
                   : 'text-zinc-400 hover:text-white'
               }`}
             >
@@ -215,8 +204,8 @@ export default function AuthPage() {
           )}
 
           {successMessage && (
-            <div className="p-3 rounded-xl bg-lime-950/60 border border-lime-800/80 text-lime-300 text-xs flex items-start gap-2">
-              <CheckCircle2 className="h-4 w-4 text-lime-400 shrink-0 mt-0.5" />
+            <div className="p-3 rounded-xl bg-zinc-900 border border-zinc-700 text-zinc-200 text-xs flex items-start gap-2">
+              <CheckCircle2 className="h-4 w-4 text-white shrink-0 mt-0.5" />
               <span>{successMessage}</span>
             </div>
           )}
@@ -234,7 +223,7 @@ export default function AuthPage() {
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   placeholder="athlete@gym.com"
-                  className="w-full rounded-xl bg-zinc-950 border border-zinc-800 pl-10 pr-3.5 py-2.5 text-sm text-white placeholder-zinc-600 focus:outline-none focus:border-lime-400"
+                  className="w-full rounded-xl bg-zinc-950 border border-zinc-800 pl-10 pr-3.5 py-2.5 text-sm text-white placeholder-zinc-600 focus:outline-none focus:border-zinc-500"
                 />
               </div>
             </div>
@@ -252,7 +241,7 @@ export default function AuthPage() {
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="••••••••"
-                  className="w-full rounded-xl bg-zinc-950 border border-zinc-800 pl-10 pr-3.5 py-2.5 text-sm text-white placeholder-zinc-600 focus:outline-none focus:border-lime-400"
+                  className="w-full rounded-xl bg-zinc-950 border border-zinc-800 pl-10 pr-3.5 py-2.5 text-sm text-white placeholder-zinc-600 focus:outline-none focus:border-zinc-500"
                 />
               </div>
             </div>
@@ -260,7 +249,7 @@ export default function AuthPage() {
             <button
               type="submit"
               disabled={isLoading}
-              className="w-full py-3.5 rounded-2xl bg-lime-400 hover:bg-lime-300 disabled:opacity-50 text-black font-extrabold text-sm flex items-center justify-center gap-2 shadow-[0_0_20px_rgba(163,230,53,0.3)] active:scale-95 transition cursor-pointer"
+              className="w-full py-3.5 rounded-2xl bg-white hover:bg-zinc-200 disabled:opacity-50 text-black font-extrabold text-sm flex items-center justify-center gap-2 shadow-[0_0_20px_rgba(255,255,255,0.15)] active:scale-95 transition cursor-pointer"
             >
               {isLoading ? (
                 <>
@@ -280,9 +269,6 @@ export default function AuthPage() {
           </p>
         </div>
       )}
-
-      {/* Bottom Nav */}
-      <BottomNav />
     </div>
   );
 }

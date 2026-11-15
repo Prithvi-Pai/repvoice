@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from 'next';
 import './globals.css';
-import { Navbar } from '@/components/layout/Navbar';
+import { AuthProvider } from '@/context/AuthContext';
+import { AuthShell } from '@/components/auth/AuthShell';
 
 export const metadata: Metadata = {
   title: 'RepVoice - Voice-Based Gym Workout Tracker',
@@ -27,11 +28,10 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en" className="dark">
-      <body className="min-h-screen bg-[#09090b] text-zinc-100 flex flex-col antialiased selection:bg-lime-400 selection:text-black">
-        <Navbar />
-        <main className="flex-1 max-w-md w-full mx-auto pb-24 px-4 pt-3">
-          {children}
-        </main>
+      <body className="min-h-screen bg-black text-zinc-100 flex flex-col antialiased selection:bg-white selection:text-black">
+        <AuthProvider>
+          <AuthShell>{children}</AuthShell>
+        </AuthProvider>
       </body>
     </html>
   );
