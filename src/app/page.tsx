@@ -83,7 +83,7 @@ import {
 } from '@/lib/voice/audioCaptureEnhancer';
 import { GymAudioIntelligence } from '@/components/audio/GymAudioIntelligence';
 import { generateDailyRecommendation } from '@/lib/recommendation/recommendationEngine';
-import { getLocalDateKey, generateDefaultWorkoutName } from '@/lib/history/dateGrouping';
+import { getLocalDateKey, generateDefaultWorkoutName, isGenericWorkoutTitle } from '@/lib/history/dateGrouping';
 import { WorkoutReviewModal } from '@/components/workout/WorkoutReviewModal';
 import { getPreviousPerformanceForExercise } from '@/lib/history/previousPerformance';
 import { calculateEstimatedCalories } from '@/lib/analytics/metricsEngine';
@@ -300,10 +300,9 @@ export default function WorkoutPage() {
 
   // Start new workout session
   const handleStartWorkout = useCallback((title?: string): Workout => {
-    const finalTitle =
-      title && title !== 'Gym Workout' && title !== 'Continuous Voice Workout'
-        ? title
-        : generateDefaultWorkoutName(new Date());
+    const finalTitle = !isGenericWorkoutTitle(title)
+      ? title!.trim()
+      : generateDefaultWorkoutName(new Date());
 
     const newWorkout: Workout = {
       id: typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `w_${Date.now()}`,
@@ -1760,7 +1759,11 @@ export default function WorkoutPage() {
 
     const completionDate = new Date();
     const finalTitle =
-      customTitle?.trim() || currentWorkout.title || generateDefaultWorkoutName(completionDate);
+      customTitle?.trim() && !isGenericWorkoutTitle(customTitle.trim())
+        ? customTitle.trim()
+        : !isGenericWorkoutTitle(currentWorkout.title)
+        ? currentWorkout.title
+        : generateDefaultWorkoutName(completionDate);
 
     const workoutToSave: Workout = {
       ...currentWorkout,
@@ -1807,7 +1810,11 @@ export default function WorkoutPage() {
 
     const completionDate = new Date();
     const finalTitle =
-      customTitle?.trim() || currentWorkout.title || generateDefaultWorkoutName(completionDate);
+      customTitle?.trim() && !isGenericWorkoutTitle(customTitle.trim())
+        ? customTitle.trim()
+        : !isGenericWorkoutTitle(currentWorkout.title)
+        ? currentWorkout.title
+        : generateDefaultWorkoutName(completionDate);
 
     const workoutToSave: Workout = {
       ...currentWorkout,

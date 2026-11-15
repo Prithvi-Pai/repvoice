@@ -453,3 +453,35 @@ export async function deleteWorkoutFromHistory(workoutId: string): Promise<boole
 
   return deletedFromSupabase;
 }
+
+/**
+ * Updates the title of a workout in both Supabase and localStorage.
+ */
+export async function updateWorkoutTitle(workoutId: string, newTitle: string): Promise<boolean> {
+  const cleanTitle = newTitle.trim();
+  if (!cleanTitle) return false;
+
+  const client = getSupabaseClient();
+  let updatedInSupabase = false;
+
+  if (client) {
+    try {
+      const { error } = await client
+        .from('workouts')
+        .update({ title: cleanTitle })
+        .eq('id', workoutId);
+      if (!error) updatedInSupabase = true;
+    } catch (e) {
+      console.error('Failed to update workout title in Supabase:', e);
+    }
+  }
+
+  // Also update in local storage
+  if (typeof window !== 'undefined') {
+    const local = getLocalWorkoutHistory();
+    const updated = local.map((w) => (w.id === workoutId ? { ...w, title: cleanTitle } : w));
+    localStorage.setItem(LOCAL_STORAGE_HISTORY, JSON.stringify(updated));
+  }
+
+  return true;
+}

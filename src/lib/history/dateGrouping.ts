@@ -100,3 +100,22 @@ export function generateDefaultWorkoutName(dateOrTimestamp: Date | string | numb
   const year = d.getFullYear();
   return `Workout – ${dayName}, ${dayNum} ${monthName} ${year}`;
 }
+
+/**
+ * Checks if a workout title is generic or placeholder (e.g. "Voice Workout", "Gym Workout")
+ * and should be replaced with the automatic date-based title.
+ */
+export function isGenericWorkoutTitle(title?: string | null): boolean {
+  if (!title) return true;
+  const lower = title.trim().toLowerCase();
+  return (
+    lower === 'voice workout' ||
+    lower === 'continuous voice workout' ||
+    lower === 'gym workout' ||
+    lower === 'new workout' ||
+    lower === 'workout' ||
+    lower === 'session complete' ||
+    lower.startsWith('voice workout') ||
+    lower.startsWith('continuous voice')
+  );
+}

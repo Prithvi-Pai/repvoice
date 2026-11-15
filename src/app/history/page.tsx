@@ -17,10 +17,17 @@ import {
   Flame,
   Plus,
   Filter,
-  X
+  X,
+  Pencil,
+  Check,
 } from 'lucide-react';
 import { Workout, WorkoutExercise } from '@/types';
-import { getWorkoutHistory, deleteWorkoutFromHistory, saveActiveWorkout } from '@/lib/storage';
+import {
+  getWorkoutHistory,
+  deleteWorkoutFromHistory,
+  updateWorkoutTitle,
+  saveActiveWorkout,
+} from '@/lib/storage';
 import { BottomNav } from '@/components/layout/BottomNav';
 import { formatDate, formatDuration } from '@/lib/utils/cn';
 import {
@@ -41,6 +48,40 @@ export default function HistoryPage() {
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [selectedDateKey, setSelectedDateKey] = useState<string | null>(null);
   const [showCalendarModal, setShowCalendarModal] = useState<boolean>(false);
+  const [editingWorkoutId, setEditingWorkoutId] = useState<string | null>(null);
+  const [editingTitle, setEditingTitle] = useState<string>('');
+  const [isSavingTitle, setIsSavingTitle] = useState<boolean>(false);
+
+  const handleStartEditTitle = (e: React.MouseEvent, workout: Workout) => {
+    e.stopPropagation();
+    setEditingWorkoutId(workout.id);
+    setEditingTitle(workout.title);
+  };
+
+  const handleSaveTitle = async (e: React.MouseEvent, workoutId: string) => {
+    e.stopPropagation();
+    const clean = editingTitle.trim();
+    if (!clean) return;
+
+    setIsSavingTitle(true);
+    try {
+      await updateWorkoutTitle(workoutId, clean);
+      setWorkouts((prev) =>
+        prev.map((w) => (w.id === workoutId ? { ...w, title: clean } : w))
+      );
+      setEditingWorkoutId(null);
+    } catch (err: any) {
+      alert(`Failed to save workout title: ${err?.message || err}`);
+    } finally {
+      setIsSavingTitle(false);
+    }
+  };
+
+  const handleCancelEditTitle = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setEditingWorkoutId(null);
+    setEditingTitle('');
+  };
 
   const rollup = calculateMonthlyRollup(workouts);
 
@@ -140,12 +181,57 @@ export default function HistoryPage() {
           className="p-4 cursor-pointer hover:bg-zinc-850 transition"
         >
           <div className="flex items-start justify-between">
-            <div>
-              <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-400 block mb-0.5">
-                {formatDate(workout.startedAt)}
-              </span>
-              <h2 className="text-base font-extrabold text-white">{workout.title}</h2>
-            </div>
+            {editingWorkoutId === workout.id ? (
+              <div className="flex-1 mr-2" onClick={(e) => e.stopPropagation()}>
+                <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-400 block mb-1">
+                  Edit Workout Title
+                </span>
+                <div className="flex items-center gap-1.5">
+                  <input
+                    type="text"
+                    value={editingTitle}
+                    onChange={(e) => setEditingTitle(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') handleSaveTitle(e as any, workout.id);
+                      if (e.key === 'Escape') handleCancelEditTitle(e as any);
+                    }}
+                    autoFocus
+                    className="flex-1 bg-zinc-950 border border-zinc-700 focus:border-white rounded-xl px-3 py-1.5 text-sm text-white font-bold outline-none"
+                  />
+                  <button
+                    onClick={(e) => handleSaveTitle(e, workout.id)}
+                    disabled={isSavingTitle || !editingTitle.trim()}
+                    className="p-2 rounded-xl bg-white hover:bg-zinc-200 text-black font-extrabold transition disabled:opacity-50 cursor-pointer"
+                    title="Save Title"
+                  >
+                    <Check className="h-4 w-4 stroke-[3]" />
+                  </button>
+                  <button
+                    onClick={handleCancelEditTitle}
+                    className="p-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-400 hover:text-white transition cursor-pointer"
+                    title="Cancel"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="flex-1 min-w-0 pr-2">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-400 block mb-0.5">
+                  {formatDate(workout.startedAt)}
+                </span>
+                <div className="flex items-center gap-2">
+                  <h2 className="text-base font-extrabold text-white truncate">{workout.title}</h2>
+                  <button
+                    onClick={(e) => handleStartEditTitle(e, workout)}
+                    className="p-1 rounded-lg text-zinc-500 hover:text-white hover:bg-zinc-800 transition shrink-0 cursor-pointer"
+                    title="Edit workout name"
+                  >
+                    <Pencil className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              </div>
+            )}
             <div className="flex items-center gap-1">
               <button
                 onClick={(e) => {

@@ -26,7 +26,7 @@ import {
   evaluateWorkoutPRs,
 } from '@/lib/records/personalRecordEngine';
 import { formatDuration } from '@/lib/utils/cn';
-import { generateDefaultWorkoutName } from '@/lib/history/dateGrouping';
+import { generateDefaultWorkoutName, isGenericWorkoutTitle } from '@/lib/history/dateGrouping';
 
 interface WorkoutReviewModalProps {
   isOpen: boolean;
@@ -58,25 +58,21 @@ export function WorkoutReviewModal({
   const [metrics, setMetrics] = useState<WorkoutReviewMetrics | null>(null);
   const [estimatedCalories, setEstimatedCalories] = useState<number>(0);
 
-  // Automatic default workout title
-  const defaultInitialTitle =
-    workout?.title && workout.title !== 'Gym Workout' && workout.title !== 'New Workout'
-      ? workout.title
-      : generateDefaultWorkoutName(workout?.completedAt || new Date());
+  // Automatic default workout title (cleans generic 'Voice Workout', 'Gym Workout', etc.)
+  const getInitialTitle = (w?: Workout | null) => {
+    if (!w) return generateDefaultWorkoutName(new Date());
+    if (isGenericWorkoutTitle(w.title)) {
+      return generateDefaultWorkoutName(w.completedAt || w.startedAt || new Date());
+    }
+    return w.title;
+  };
 
-  const [workoutTitle, setWorkoutTitle] = useState<string>(defaultInitialTitle);
-  const [isEditingTitle, setIsEditingTitle] = useState<boolean>(false);
-  const [tempTitle, setTempTitle] = useState<string>(defaultInitialTitle);
+  const [workoutTitle, setWorkoutTitle] = useState<string>(getInitialTitle(workout));
 
   useEffect(() => {
     if (isOpen && workout) {
-      const generated =
-        workout.title && workout.title !== 'Gym Workout' && workout.title !== 'New Workout'
-          ? workout.title
-          : generateDefaultWorkoutName(workout.completedAt || new Date());
+      const generated = getInitialTitle(workout);
       setWorkoutTitle(generated);
-      setTempTitle(generated);
-      setIsEditingTitle(false);
 
       getPersonalRecords().then((prs) => {
         setExistingPRs(prs);
@@ -116,45 +112,34 @@ export function WorkoutReviewModal({
   );
   const voicePercent = completedSets > 0 ? Math.round((voiceSets / completedSets) * 100) : 100;
 
-  const handleSaveTitleEdit = () => {
-    if (tempTitle.trim()) {
-      setWorkoutTitle(tempTitle.trim());
-    }
-    setIsEditingTitle(false);
-  };
-
-  const handleCancelTitleEdit = () => {
-    setTempTitle(workoutTitle);
-    setIsEditingTitle(false);
-  };
-
   const completionDateString = new Date(workout.completedAt || workout.startedAt || Date.now()).toLocaleDateString(
     'en-US',
     { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }
   );
+
+  const finalSaveTitle = workoutTitle.trim() || generateDefaultWorkoutName(workout.completedAt || new Date());
 
   return (
     <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-end sm:items-center justify-center p-0 sm:p-4 animate-in fade-in font-sans">
       <div className="w-full max-w-lg bg-zinc-950 border border-zinc-800 rounded-t-3xl sm:rounded-3xl p-5 max-h-[92vh] flex flex-col shadow-2xl overflow-hidden">
         {/* Header Bar */}
         <div className="flex items-center justify-between pb-3 border-b border-zinc-800 flex-shrink-0">
-          <div className="flex items-center gap-2">
-            <span className="w-8 h-8 rounded-xl bg-zinc-900 border border-zinc-750 flex items-center justify-center text-white">
+          <div className="flex items-center gap-2.5 min-w-0 pr-2">
+            <span className="w-8 h-8 rounded-xl bg-zinc-900 border border-zinc-750 flex items-center justify-center text-white shrink-0">
               <Sparkles className="w-4 h-4" />
             </span>
-            <div>
+            <div className="min-w-0">
               <span className="text-[10px] font-extrabold uppercase tracking-widest text-zinc-400 block leading-none">
                 WORKOUT SUMMARY
               </span>
-              <span className="text-[11px] text-zinc-400 font-semibold flex items-center gap-1 mt-0.5">
-                <Calendar className="w-3 h-3 text-zinc-400" />
-                {completionDateString}
-              </span>
+              <h2 className="text-sm font-extrabold text-white tracking-tight truncate max-w-[220px] sm:max-w-xs mt-0.5">
+                {finalSaveTitle}
+              </h2>
             </div>
           </div>
           <button
             onClick={onClose}
-            className="w-8 h-8 rounded-full bg-zinc-900 text-zinc-400 hover:text-white flex items-center justify-center transition border border-zinc-800"
+            className="w-8 h-8 rounded-full bg-zinc-900 text-zinc-400 hover:text-white flex items-center justify-center transition border border-zinc-800 shrink-0"
           >
             <X className="w-4 h-4" />
           </button>
@@ -162,56 +147,36 @@ export function WorkoutReviewModal({
 
         {/* Scrollable Content Body */}
         <div className="overflow-y-auto flex-1 space-y-4 py-4 pr-1">
-          {/* Workout Title Section with Inline Edit */}
-          <div className="p-3.5 rounded-2xl bg-zinc-900/80 border border-zinc-800 space-y-1.5">
+          {/* Prominent Directly Editable Workout Name Card */}
+          <div className="p-3.5 rounded-2xl bg-zinc-900 border border-zinc-750 space-y-2">
             <div className="flex items-center justify-between">
-              <span className="text-[10px] font-extrabold uppercase tracking-wider text-zinc-400">
-                Session Title
-              </span>
-              {!isEditingTitle && (
-                <button
-                  onClick={() => setIsEditingTitle(true)}
-                  className="text-xs text-zinc-400 hover:text-white flex items-center gap-1 font-semibold transition"
-                >
-                  <Pencil className="w-3 h-3" />
-                  <span>Edit Name</span>
-                </button>
-              )}
+              <label className="text-[11px] font-black uppercase tracking-wider text-zinc-200 flex items-center gap-1.5">
+                <Pencil className="w-3.5 h-3.5 text-white" />
+                Workout Name (Tap to Edit)
+              </label>
+              <button
+                type="button"
+                onClick={() =>
+                  setWorkoutTitle(generateDefaultWorkoutName(workout.completedAt || workout.startedAt || new Date()))
+                }
+                className="text-[10px] text-zinc-400 hover:text-white font-mono underline cursor-pointer"
+                title="Reset to default date-based name"
+              >
+                Auto-Name
+              </button>
             </div>
 
-            {isEditingTitle ? (
-              <div className="flex items-center gap-2 pt-1">
-                <input
-                  type="text"
-                  value={tempTitle}
-                  onChange={(e) => setTempTitle(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') handleSaveTitleEdit();
-                    if (e.key === 'Escape') handleCancelTitleEdit();
-                  }}
-                  autoFocus
-                  className="flex-1 bg-zinc-950 border border-zinc-700 rounded-xl px-3 py-2 text-sm text-white font-bold focus:outline-none focus:border-white"
-                />
-                <button
-                  onClick={handleSaveTitleEdit}
-                  className="p-2 rounded-xl bg-white hover:bg-zinc-200 text-black font-bold transition"
-                  title="Save Title"
-                >
-                  <Check className="w-4 h-4 stroke-[3]" />
-                </button>
-                <button
-                  onClick={handleCancelTitleEdit}
-                  className="p-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-400 hover:text-white transition"
-                  title="Cancel"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
-            ) : (
-              <h2 className="text-base font-extrabold text-white tracking-tight">
-                {workoutTitle}
-              </h2>
-            )}
+            <input
+              type="text"
+              value={workoutTitle}
+              onChange={(e) => setWorkoutTitle(e.target.value)}
+              placeholder="e.g. Workout – Sunday, 15 November 2026"
+              className="w-full bg-zinc-950 border border-zinc-700 focus:border-white rounded-xl px-3.5 py-2.5 text-sm text-white font-bold tracking-tight outline-none transition"
+            />
+            <span className="text-[10px] text-zinc-500 flex items-center gap-1">
+              <Calendar className="w-3 h-3 text-zinc-400" />
+              Recorded on {completionDateString}
+            </span>
           </div>
 
           {/* PR Banner if Any PRs Established */}
@@ -364,7 +329,7 @@ export function WorkoutReviewModal({
             Keep Going
           </button>
           <button
-            onClick={() => onSave(workoutTitle)}
+            onClick={() => onSave(finalSaveTitle)}
             disabled={isSaving}
             className="flex-2 w-full py-3 rounded-xl bg-white hover:bg-zinc-200 text-black font-extrabold text-sm flex items-center justify-center gap-2 shadow-[0_2px_15px_rgba(255,255,255,0.2)] transition cursor-pointer disabled:opacity-50"
           >
