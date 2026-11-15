@@ -29,6 +29,7 @@ import {
   formatLocalDateLabel,
 } from '@/lib/history/dateGrouping';
 import { HistoryCalendarModal } from '@/components/history/HistoryCalendarModal';
+import { calculateMonthlyRollup } from '@/lib/analytics/metricsEngine';
 
 export default function HistoryPage() {
   const router = useRouter();
@@ -40,6 +41,8 @@ export default function HistoryPage() {
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [selectedDateKey, setSelectedDateKey] = useState<string | null>(null);
   const [showCalendarModal, setShowCalendarModal] = useState<boolean>(false);
+
+  const rollup = calculateMonthlyRollup(workouts);
 
   const fetchHistory = async () => {
     setIsLoading(true);
@@ -282,6 +285,36 @@ export default function HistoryPage() {
           </button>
         </div>
       </div>
+
+      {/* Stitch Monthly Rollup Snapshot */}
+      {workouts.length > 0 && (
+        <div className="grid grid-cols-3 gap-2.5 p-3 rounded-2xl bg-[#1a1c22] border border-white/5 shadow-md">
+          <div className="text-center p-2 rounded-xl bg-[#111317]/60 border border-white/5">
+            <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block">
+              Workouts
+            </span>
+            <span className="text-base font-extrabold text-white font-mono">
+              {rollup.totalWorkouts}
+            </span>
+          </div>
+          <div className="text-center p-2 rounded-xl bg-[#111317]/60 border border-white/5">
+            <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block">
+              Volume
+            </span>
+            <span className="text-base font-extrabold text-[#c8f322] font-mono">
+              {rollup.totalVolume >= 1000 ? `${(rollup.totalVolume / 1000).toFixed(1)}k` : rollup.totalVolume}
+            </span>
+          </div>
+          <div className="text-center p-2 rounded-xl bg-[#111317]/60 border border-white/5">
+            <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block">
+              Avg Time
+            </span>
+            <span className="text-base font-extrabold text-[#7bd0ff] font-mono">
+              {rollup.avgDurationMinutes}m
+            </span>
+          </div>
+        </div>
+      )}
 
       {/* Calendar Filter Indicator Bar if active */}
       {selectedDateKey && (

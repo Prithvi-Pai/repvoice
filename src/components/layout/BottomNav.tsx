@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Dumbbell, History, Settings, Play } from 'lucide-react';
+import { Dumbbell, History, Settings, Play, CalendarRange } from 'lucide-react';
 import { cn } from '@/lib/utils/cn';
 
 interface BottomNavProps {
@@ -19,6 +19,12 @@ export function BottomNav({ hasActiveWorkout }: BottomNavProps) {
       icon: hasActiveWorkout ? Play : Dumbbell,
       active: pathname === '/',
       highlight: hasActiveWorkout,
+    },
+    {
+      label: 'Plans',
+      href: '/plan',
+      icon: CalendarRange,
+      active: pathname === '/plan',
     },
     {
       label: 'History',

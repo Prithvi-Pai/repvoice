@@ -14,6 +14,7 @@ export interface WorkoutSet {
   completedAt?: string;
   durationSeconds?: number;
   status?: SetStatus;
+  isVoiceLogged?: boolean;
 }
 
 export type ClarificationStep =
@@ -59,6 +60,14 @@ export interface Workout {
   completedAt?: string;
   notes?: string;
   exercises: WorkoutExercise[];
+  durationSeconds?: number;
+  avgRestSeconds?: number;
+  caloriesBurned?: number;
+  totalVolume?: number;
+  totalSets?: number;
+  voiceSetsCount?: number;
+  snapshotUrl?: string;
+  snapshotLocation?: string;
 }
 
 export interface ParsedSet {
@@ -195,6 +204,104 @@ export interface UserProfile {
   email?: string;
   displayName?: string;
   preferredUnit: WeightUnit;
+  recognitionMode?: 'continuous' | 'push_to_talk';
+  spokenConfirmations?: boolean;
+  beepOnRecord?: boolean;
+  microphoneSensitivity?: 'quiet' | 'standard' | 'aggressive';
+  defaultRestTimerSeconds?: number;
+  avatarUrl?: string;
+  tier?: 'free' | 'pro' | 'ultra';
+}
+
+// --- Stitch Workout Plan Models (Screen 4: /plan) ---
+export interface PlanExercise {
+  id: string;
+  planId?: string;
+  exerciseName: string;
+  targetSets: number;
+  targetReps: number;
+  targetWeight?: number;
+  unit: WeightUnit;
+  restSeconds: number;
+  orderIndex: number;
+}
+
+export interface WorkoutPlan {
+  id: string;
+  userId?: string;
+  title: string;
+  description?: string;
+  scheduledDay: string;       // e.g. "Tomorrow, Oct 25", "Saturday, Oct 27"
+  scheduledDate?: string;
+  isActive: boolean;
+  orderIndex: number;
+  exercises: PlanExercise[];
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+// --- Stitch Personal Record Models (Screens 1, 3, 5) ---
+export interface PersonalRecord {
+  id: string;
+  userId?: string;
+  exerciseName: string;
+  recordType: 'max_weight' | 'max_reps' | 'max_volume';
+  recordValue: number;
+  unit: WeightUnit;
+  reps?: number;
+  workoutId?: string;
+  achievedAt: string;
+  previousValue?: number;
+  delta?: number;             // e.g. +10 lbs
+}
+
+// --- Stitch Previous Performance Comparison (Screen 2: active_workout) ---
+export interface PreviousSetPerformance {
+  setNumber: number;
+  weight: number;
+  reps: number;
+  unit: WeightUnit;
+  formatted: string;          // e.g. "185 × 8"
+}
+
+export interface ExercisePerformanceHistory {
+  exerciseName: string;
+  lastWorkoutDate: string;
+  sets: PreviousSetPerformance[];
+}
+
+// --- Stitch Dashboard & Review Telemetry (Screens 1 & 3) ---
+export interface HomeDashboardMetrics {
+  streakDays: number;
+  weeklyVolume: number;
+  weeklyVolumeFormatted: string; // e.g. "24.1k"
+  totalWorkoutsCount: number;
+  preferredUnit: WeightUnit;
+  todayFocus: string;            // e.g. "Push Day • Upper Body"
+  recentWorkout?: {
+    id: string;
+    title: string;
+    completedAt: string;
+    durationMinutes: number;
+    volume: number;
+    setsCount: number;
+    prDelta?: string;            // e.g. "PR +5 lbs"
+    voiceAccuracyPercent: number;// e.g. 100
+  };
+}
+
+export interface WorkoutReviewMetrics {
+  durationSeconds: number;
+  formattedDuration: string;     // e.g. "48m 22s"
+  avgRestSeconds: number;        // e.g. 64s avg
+  totalVolume: number;           // e.g. 14,820 lbs
+  totalSets: number;             // e.g. 16 Sets
+  exerciseCount: number;         // e.g. 4 Key movements
+  voiceSetsCount: number;        // e.g. 14
+  voiceSyncPercent: number;      // e.g. 88%
+  newPRs: PersonalRecord[];      // e.g. ["205 lbs (+10 lbs)", "30 lbs × 12 reps"]
+  snapshotUrl?: string;
+  snapshotLocation?: string;     // e.g. "Power Rack #3"
 }
 
 export interface SaveWorkoutResult {

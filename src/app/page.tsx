@@ -73,6 +73,9 @@ import {
 import { DailyRecommendationCard } from '@/components/workout/DailyRecommendationCard';
 import { generateDailyRecommendation } from '@/lib/recommendation/recommendationEngine';
 import { getLocalDateKey } from '@/lib/history/dateGrouping';
+import { WorkoutReviewModal } from '@/components/workout/WorkoutReviewModal';
+import { getPreviousPerformanceForExercise } from '@/lib/history/previousPerformance';
+import { calculateEstimatedCalories } from '@/lib/analytics/metricsEngine';
 
 export default function WorkoutPage() {
   const [activeWorkout, setActiveWorkout] = useState<Workout | null>(null);
@@ -1920,6 +1923,11 @@ export default function WorkoutPage() {
                 <span>{totalSetsCount} sets</span>
                 <span>•</span>
                 <span>{totalVolume} {preferredUnit}</span>
+                <span>•</span>
+                <span className="font-semibold text-rose-400 flex items-center gap-1" title="Estimated Calorie Burn">
+                  <Flame className="h-3 w-3 text-rose-400" />
+                  ~{calculateEstimatedCalories(elapsedSeconds, totalVolume, totalSetsCount)} kcal
+                </span>
               </div>
             </div>
 
@@ -2303,6 +2311,9 @@ export default function WorkoutPage() {
                         ? Math.max(0, Math.floor((Date.now() - new Date(currentTimer.startedAt).getTime()) / 1000))
                         : set.durationSeconds || 0;
                       const displayDuration = formatDuration(liveElapsed);
+                      const prevPerformances = getPreviousPerformanceForExercise(exercise.exerciseName, workoutHistory);
+                      const prevSet = prevPerformances[setIndex];
+                      const prevDisplay = prevSet ? prevSet.formatted : '—';
 
                       return (
                         <div
@@ -2313,11 +2324,18 @@ export default function WorkoutPage() {
                               : 'bg-zinc-950/70 border-zinc-800/80 text-zinc-300'
                           }`}
                         >
-                          {/* Top row: Set #, Weight, Reps, Done check, Delete */}
+                          {/* Top row: Set #, Prev, Weight, Reps, Done check, Delete */}
                           <div className="flex items-center justify-between gap-1">
-                            {/* Set Number */}
-                            <div className="flex items-center gap-1 min-w-[28px]">
+                            {/* Set Number & Stitch Prev Benchmark */}
+                            <div className="flex items-center gap-1.5 min-w-[32px]">
                               <span className="font-extrabold text-xs text-zinc-400">#{set.setNumber}</span>
+                              <span
+                                className="text-[10px] font-mono text-zinc-500 bg-zinc-900/90 px-1.5 py-0.5 rounded border border-white/5 flex items-center"
+                                title="Previous session benchmark (weight × reps)"
+                              >
+                                <span className="text-[9px] uppercase tracking-wider text-zinc-600 font-sans mr-1">Prev:</span>
+                                <span className="text-zinc-300 font-semibold">{prevDisplay}</span>
+                              </span>
                             </div>
 
                             {/* Weight Stepper / Input */}
@@ -2481,106 +2499,20 @@ export default function WorkoutPage() {
         </div>
       )}
 
-      {/* Finish Workout Confirmation Modal */}
-      {showFinishConfirm && (
-        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in">
-          <div className="w-full max-w-md bg-zinc-900 border border-zinc-800 rounded-3xl p-5 space-y-4 shadow-2xl">
-            <div className="text-center space-y-1">
-              <span className="text-[10px] font-extrabold uppercase tracking-widest text-lime-400">
-                WORKOUT COMPLETED
-              </span>
-              <h3 className="text-xl font-black text-white">Save Workout</h3>
-              <p className="text-xs text-zinc-400">
-                {activeWorkout?.title} • {formatDuration(elapsedSeconds)} • {totalVolume} {preferredUnit} moved
-              </p>
-            </div>
-
-            {/* Cloud Sync vs Guest Status */}
-            {userEmail ? (
-              <div className="p-3 rounded-2xl bg-lime-950/40 border border-lime-800/60 flex items-center gap-2.5 text-xs text-lime-300">
-                <ShieldCheck className="h-4 w-4 text-lime-400 shrink-0" />
-                <div className="flex-1 truncate">
-                  <span className="font-bold">Syncing to Supabase PostgreSQL:</span>
-                  <p className="text-zinc-400 text-[11px] truncate">{userEmail}</p>
-                </div>
-              </div>
-            ) : (
-              <div className="p-3 rounded-2xl bg-amber-950/40 border border-amber-800/60 space-y-2 text-xs">
-                <div className="flex items-start gap-2 text-amber-300">
-                  <AlertCircle className="h-4 w-4 text-amber-400 shrink-0 mt-0.5" />
-                  <div>
-                    <span className="font-bold block">Guest Mode (Local Storage Only)</span>
-                    <p className="text-zinc-300 text-[11px] mt-0.5">
-                      Supabase PostgreSQL requires an athlete login. Sign in now to sync this workout to your Supabase Table Editor.
-                    </p>
-                  </div>
-                </div>
-                <div className="pt-1">
-                  <Link
-                    href="/auth"
-                    className="w-full py-2 px-3 rounded-xl bg-lime-400 hover:bg-lime-300 text-black font-extrabold text-xs flex items-center justify-center gap-1.5 transition"
-                  >
-                    <User className="h-3.5 w-3.5" />
-                    <span>Sign In to Sync to Cloud</span>
-                  </Link>
-                </div>
-              </div>
-            )}
-
-            <div className="space-y-1.5">
-              <label className="text-xs font-semibold text-zinc-300">
-                Workout Notes (optional):
-              </label>
-              <textarea
-                value={workoutNotes}
-                onChange={(e) => setWorkoutNotes(e.target.value)}
-                placeholder="Felt strong, good pump, increased bench weight..."
-                rows={3}
-                className="w-full rounded-xl bg-zinc-950 border border-zinc-800 p-3 text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-lime-400"
-              />
-            </div>
-
-            <div className="flex gap-2">
-              <button
-                onClick={() => setShowFinishConfirm(false)}
-                disabled={isSaving}
-                className="flex-1 py-3 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-300 font-bold text-xs transition cursor-pointer"
-              >
-                Keep Going
-              </button>
-
-              {userEmail ? (
-                <button
-                  onClick={handleFinishWorkout}
-                  disabled={isSaving}
-                  className="flex-2 w-full py-3 rounded-xl bg-lime-400 hover:bg-lime-300 disabled:opacity-50 text-black font-black text-sm flex items-center justify-center gap-1.5 shadow-[0_0_20px_rgba(163,230,53,0.3)] transition cursor-pointer"
-                >
-                  {isSaving ? (
-                    <>
-                      <span className="w-4 h-4 border-2 border-black border-t-transparent rounded-full animate-spin" />
-                      <span>Saving to Supabase...</span>
-                    </>
-                  ) : (
-                    <>
-                      <Save className="h-4 w-4" />
-                      <span>Save & Sync</span>
-                    </>
-                  )}
-                </button>
-              ) : (
-                <button
-                  onClick={handleSaveLocally}
-                  disabled={isSaving}
-                  className="flex-2 w-full py-3 rounded-xl bg-zinc-700 hover:bg-zinc-600 text-white font-bold text-xs flex items-center justify-center gap-1.5 transition cursor-pointer"
-                  title="Saves in browser local storage only"
-                >
-                  <Save className="h-4 w-4 text-amber-400" />
-                  <span>Save Locally</span>
-                </button>
-              )}
-            </div>
-          </div>
-        </div>
+      {/* Stitch Obsidian Workout Review Summary Modal (Screen 3) */}
+      {showFinishConfirm && activeWorkout && (
+        <WorkoutReviewModal
+          isOpen={showFinishConfirm}
+          workout={activeWorkout}
+          elapsedSeconds={elapsedSeconds}
+          preferredUnit={preferredUnit}
+          userEmail={userEmail}
+          isSaving={isSaving}
+          workoutNotes={workoutNotes}
+          onNotesChange={setWorkoutNotes}
+          onClose={() => setShowFinishConfirm(false)}
+          onSave={userEmail ? handleFinishWorkout : async () => handleSaveLocally()}
+        />
       )}
 
       {/* Voice Clarification Multi-Turn Modal (Feature 1 & 2) */}
