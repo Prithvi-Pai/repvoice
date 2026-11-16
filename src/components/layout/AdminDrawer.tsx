@@ -26,7 +26,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { UserProfile, WeightUnit, Gender } from '@/types';
-import { getStoredProfile, saveStoredProfile, getWorkoutHistory } from '@/lib/storage';
+import { getStoredProfile, saveStoredProfile, getWorkoutHistory, syncUserProfileFromCloud } from '@/lib/storage';
 import { downloadWorkoutsCSV, downloadWorkoutsJSON } from '@/lib/export/csvExport';
 import { playAcousticChime, speakVoiceConfirmation } from '@/lib/voice/audioFeedback';
 
@@ -52,12 +52,25 @@ export function AdminDrawer({ isOpen, onClose }: AdminDrawerProps) {
 
   const [activeSection, setActiveSection] = useState<'all' | 'account' | 'voice' | 'units' | 'export' | 'subscription'>('all');
   const [exportNotice, setExportNotice] = useState<string | null>(null);
+  const [syncNotice, setSyncNotice] = useState<string | null>(null);
 
   useEffect(() => {
     if (isOpen) {
       setProfile(getStoredProfile());
+      if (user) {
+        syncUserProfileFromCloud(user).then((p) => setProfile(p));
+      }
+
+      const handleProfileUpdate = (e: any) => {
+        if (e.detail) setProfile(e.detail);
+        else setProfile(getStoredProfile());
+      };
+      window.addEventListener('repvoice_profile_updated', handleProfileUpdate as EventListener);
+      return () => {
+        window.removeEventListener('repvoice_profile_updated', handleProfileUpdate as EventListener);
+      };
     }
-  }, [isOpen]);
+  }, [isOpen, user]);
 
   if (!isOpen) return null;
 
@@ -65,6 +78,8 @@ export function AdminDrawer({ isOpen, onClose }: AdminDrawerProps) {
     const updated = { ...profile, [key]: value };
     setProfile(updated);
     saveStoredProfile(updated);
+    setSyncNotice(user ? 'Synced' : 'Saved');
+    setTimeout(() => setSyncNotice(null), 2000);
   };
 
   const handleSignOut = async () => {

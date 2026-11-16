@@ -32,7 +32,7 @@ import {
   ChevronRight,
 } from 'lucide-react';
 import { getSupabaseConfig, getSupabaseClient } from '@/lib/supabase/client';
-import { getStoredProfile, saveStoredProfile, getWorkoutHistory } from '@/lib/storage';
+import { getStoredProfile, saveStoredProfile, getWorkoutHistory, syncUserProfileFromCloud } from '@/lib/storage';
 import { downloadWorkoutsCSV, downloadWorkoutsJSON } from '@/lib/export/csvExport';
 import { UserProfile, WeightUnit } from '@/types';
 import { BottomNav } from '@/components/layout/BottomNav';
@@ -61,6 +61,7 @@ export default function SettingsPage() {
   const [micTesting, setMicTesting] = useState<boolean>(false);
   const [micTestText, setMicTestText] = useState<string>('');
   const [exportNotice, setExportNotice] = useState<string | null>(null);
+  const [syncNotice, setSyncNotice] = useState<string | null>(null);
 
   const handleExportCSV = async () => {
     const history = await getWorkoutHistory();
@@ -83,6 +84,9 @@ export default function SettingsPage() {
   useEffect(() => {
     const loaded = getStoredProfile();
     setProfile(loaded);
+    if (user) {
+      syncUserProfileFromCloud(user).then((p) => setProfile(p));
+    }
 
     const config = getSupabaseConfig();
     setIsConfigured(config.isConfigured);
@@ -90,13 +94,24 @@ export default function SettingsPage() {
     if (typeof window !== 'undefined') {
       const win = window as any;
       setSpeechSupport(Boolean(win.SpeechRecognition || win.webkitSpeechRecognition));
+
+      const handleProfileUpdate = (e: any) => {
+        if (e.detail) setProfile(e.detail);
+        else setProfile(getStoredProfile());
+      };
+      window.addEventListener('repvoice_profile_updated', handleProfileUpdate as EventListener);
+      return () => {
+        window.removeEventListener('repvoice_profile_updated', handleProfileUpdate as EventListener);
+      };
     }
-  }, []);
+  }, [user]);
 
   const updateProfileSetting = <K extends keyof UserProfile>(key: K, value: UserProfile[K]) => {
     const updated = { ...profile, [key]: value };
     setProfile(updated);
     saveStoredProfile(updated);
+    setSyncNotice(user ? 'Saved & synced to account' : 'Saved locally');
+    setTimeout(() => setSyncNotice(null), 2500);
   };
 
   const handleTestConnection = async () => {
@@ -180,12 +195,20 @@ export default function SettingsPage() {
 
   return (
     <div className="space-y-5 pb-28 pt-2 max-w-md mx-auto px-4 font-sans text-[#e2e2e8]">
-      {/* Page Title */}
-      <div>
-        <span className="text-[10px] font-extrabold uppercase tracking-widest text-zinc-400 block mb-0.5">
-          Obsidian Settings
-        </span>
-        <h1 className="text-2xl font-black text-white tracking-tight">Audio & Preferences</h1>
+      {/* Page Title & Realtime Cloud Sync Notice */}
+      <div className="flex items-center justify-between">
+        <div>
+          <span className="text-[10px] font-extrabold uppercase tracking-widest text-zinc-400 block mb-0.5">
+            Obsidian Settings
+          </span>
+          <h1 className="text-2xl font-black text-white tracking-tight">Audio & Preferences</h1>
+        </div>
+        {syncNotice && (
+          <span className="text-[11px] font-bold text-white bg-zinc-900 border border-zinc-700 px-2.5 py-1 rounded-full flex items-center gap-1.5 animate-in fade-in">
+            <Check className="h-3 w-3 stroke-[3]" />
+            <span>{syncNotice}</span>
+          </span>
+        )}
       </div>
 
       {/* Account Section */}

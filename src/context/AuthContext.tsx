@@ -10,6 +10,7 @@ import React, {
 } from 'react';
 import { User, Session } from '@supabase/supabase-js';
 import { getSupabaseClient } from '@/lib/supabase/client';
+import { syncUserProfileFromCloud } from '@/lib/storage';
 
 export interface AuthContextType {
   user: User | null;
@@ -51,6 +52,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       } else if (data?.session) {
         setSession(data.session);
         setUser(data.session.user);
+        syncUserProfileFromCloud(data.session.user).catch(() => {});
       } else {
         setUser(null);
         setSession(null);
@@ -80,6 +82,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (currentSession?.user) {
         setSession(currentSession);
         setUser(currentSession.user);
+        syncUserProfileFromCloud(currentSession.user).catch(() => {});
       } else {
         setSession(null);
         setUser(null);

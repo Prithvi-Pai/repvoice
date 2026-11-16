@@ -69,15 +69,17 @@ export default function HistoryPage() {
     const profile = getStoredProfile();
     if (profile.preferredUnit) setPreferredUnit(profile.preferredUnit);
 
-    const handleSync = () => {
-      const p = getStoredProfile();
+    const handleSync = (e?: any) => {
+      const p = e?.detail || getStoredProfile();
       if (p.preferredUnit) setPreferredUnit(p.preferredUnit);
     };
     window.addEventListener('focus', handleSync);
     window.addEventListener('storage', handleSync);
+    window.addEventListener('repvoice_profile_updated', handleSync as EventListener);
     return () => {
       window.removeEventListener('focus', handleSync);
       window.removeEventListener('storage', handleSync);
+      window.removeEventListener('repvoice_profile_updated', handleSync as EventListener);
     };
   }, []);
 

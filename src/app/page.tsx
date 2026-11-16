@@ -268,17 +268,19 @@ export default function WorkoutPage() {
       }
     });
 
-    const handleSyncProfile = () => {
-      const p = getStoredProfile();
+    const handleSyncProfile = (e?: any) => {
+      const p = e?.detail || getStoredProfile();
       if (p.gender) setUserGender(p.gender);
       if (p.preferredUnit) setPreferredUnit(p.preferredUnit);
     };
     window.addEventListener('focus', handleSyncProfile);
     window.addEventListener('storage', handleSyncProfile);
+    window.addEventListener('repvoice_profile_updated', handleSyncProfile as EventListener);
 
     return () => {
       window.removeEventListener('focus', handleSyncProfile);
       window.removeEventListener('storage', handleSyncProfile);
+      window.removeEventListener('repvoice_profile_updated', handleSyncProfile as EventListener);
       if (authSubscription) authSubscription.unsubscribe();
     };
   }, [refreshRecommendations]);
