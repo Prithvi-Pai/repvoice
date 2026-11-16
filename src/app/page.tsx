@@ -49,7 +49,6 @@ import {
   getWorkoutHistory,
   getStoredProfile,
   autoSaveActiveWorkout,
-  getResumableSession,
   resumeWorkoutFromHistory,
   checkAndHandleInactivityTimeout,
   getLatestSetTimestamp,
@@ -231,7 +230,7 @@ export default function WorkoutPage() {
       authSubscription = subscription;
     }
 
-    // Check for 1-hour inactivity timeout or resume old session on login
+    // Check for 1-hour inactivity timeout
     checkAndHandleInactivityTimeout().then((autoSaved) => {
       if (autoSaved) {
         activeWorkoutRef.current = null;
@@ -252,28 +251,6 @@ export default function WorkoutPage() {
           }
           const startMs = new Date(current.startedAt).getTime();
           setElapsedSeconds(Math.max(0, Math.floor((Date.now() - startMs) / 1000)));
-        } else {
-          // Check if user logged off earlier and can resume from old session today
-          const resumable = getResumableSession();
-          if (resumable) {
-            resumeWorkoutFromHistory(resumable.workoutId).then((resumed) => {
-              if (resumed) {
-                activeWorkoutRef.current = resumed;
-                setActiveWorkout(resumed);
-                if (resumed.exercises.length > 0) {
-                  const lastExId = resumed.exercises[resumed.exercises.length - 1].id;
-                  selectedExerciseIdRef.current = lastExId;
-                  setSelectedExerciseId(lastExId);
-                }
-                const startMs = new Date(resumed.startedAt).getTime();
-                setElapsedSeconds(Math.max(0, Math.floor((Date.now() - startMs) / 1000)));
-                setSaveStatus({
-                  type: 'info',
-                  message: `Resumed your workout session ("${resumed.title}") from earlier today.`,
-                });
-              }
-            });
-          }
         }
       }
     });
