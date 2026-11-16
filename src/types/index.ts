@@ -50,6 +50,7 @@ export interface ClarificationState {
 export interface WorkoutExercise {
   id: string;
   exerciseName: string;
+  muscleGroup?: MuscleGroup;
   sets: WorkoutSet[];
 }
 
@@ -61,6 +62,8 @@ export interface Workout {
   lastEntryAt?: string;
   isAutoSaved?: boolean;
   isResumed?: boolean;
+  muscleGroupDescription?: string;
+  targetMuscleGroups?: MuscleGroup[];
   notes?: string;
   exercises: WorkoutExercise[];
   durationSeconds?: number;
@@ -212,10 +215,13 @@ export type WorkoutVoiceCommand =
       suggestedSetNumber?: number;
     };
 
+export type Gender = 'male' | 'female' | 'other';
+
 export interface UserProfile {
   id: string;
   email?: string;
   displayName?: string;
+  gender?: Gender;
   preferredUnit: WeightUnit;
   recognitionMode?: 'continuous' | 'push_to_talk';
   spokenConfirmations?: boolean;

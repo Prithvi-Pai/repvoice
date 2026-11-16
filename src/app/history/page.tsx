@@ -33,6 +33,7 @@ import {
   resumeWorkoutFromHistory,
 } from '@/lib/storage';
 import { toTitleCase, saveLearnedAlias } from '@/lib/exercises/exerciseStore';
+import { getWorkoutMuscleGroupsSummary } from '@/lib/exercises/muscleGroupStore';
 import { BottomNav } from '@/components/layout/BottomNav';
 import { formatDate, formatDuration } from '@/lib/utils/cn';
 import {
@@ -88,6 +89,27 @@ export default function HistoryPage() {
     e.stopPropagation();
     setEditingWorkoutId(null);
     setEditingTitle('');
+  };
+
+  // Muscle group editing state for historical workouts
+  const [editingMuscleWorkoutId, setEditingMuscleWorkoutId] = useState<string | null>(null);
+  const [editingMuscleText, setEditingMuscleText] = useState<string>('');
+
+  const handleSaveMuscleGroup = async (e: React.MouseEvent, workoutId: string) => {
+    e.stopPropagation();
+    const clean = editingMuscleText.trim();
+    const targetWorkout = workouts.find((w) => w.id === workoutId);
+    if (!targetWorkout) return;
+
+    const updatedWorkout: Workout = {
+      ...targetWorkout,
+      muscleGroupDescription: clean || undefined,
+    };
+
+    setWorkouts((prev) => prev.map((w) => (w.id === workoutId ? updatedWorkout : w)));
+    setEditingMuscleWorkoutId(null);
+
+    await updateWorkoutInHistory(updatedWorkout);
   };
 
   // Exercise and Set editing state for historical workouts
@@ -491,6 +513,62 @@ export default function HistoryPage() {
                   >
                     <Pencil className="h-3.5 w-3.5" />
                   </button>
+                </div>
+
+                {/* Muscle Group Trained (italics, small readable font, editable) */}
+                <div className="mt-0.5" onClick={(e) => e.stopPropagation()}>
+                  {editingMuscleWorkoutId === workout.id ? (
+                    <div className="flex items-center gap-1.5 mt-1">
+                      <input
+                        type="text"
+                        value={editingMuscleText}
+                        onChange={(e) => setEditingMuscleText(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') handleSaveMuscleGroup(e as any, workout.id);
+                          if (e.key === 'Escape') setEditingMuscleWorkoutId(null);
+                        }}
+                        autoFocus
+                        placeholder="e.g. Chest & Triceps"
+                        className="bg-zinc-950 border border-zinc-700 focus:border-white rounded-lg px-2 py-0.5 text-xs text-white italic outline-none w-48"
+                      />
+                      <button
+                        onClick={(e) => handleSaveMuscleGroup(e, workout.id)}
+                        className="p-1 rounded-md bg-white text-black hover:bg-zinc-200 transition cursor-pointer"
+                        title="Save Muscle Group"
+                      >
+                        <Check className="h-3 w-3 stroke-[3]" />
+                      </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setEditingMuscleWorkoutId(null);
+                        }}
+                        className="p-1 rounded-md bg-zinc-800 text-zinc-400 hover:text-white transition cursor-pointer"
+                        title="Cancel"
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-1.5 group/mg">
+                      <span className="text-xs italic text-zinc-400 font-medium">
+                        {workout.muscleGroupDescription || getWorkoutMuscleGroupsSummary(workout)}
+                      </span>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setEditingMuscleWorkoutId(workout.id);
+                          setEditingMuscleText(
+                            workout.muscleGroupDescription || getWorkoutMuscleGroupsSummary(workout)
+                          );
+                        }}
+                        className="opacity-60 sm:opacity-0 group-hover/mg:opacity-100 p-0.5 text-zinc-400 hover:text-white hover:bg-zinc-800 rounded transition cursor-pointer"
+                        title="Edit muscle groups trained"
+                      >
+                        <Pencil className="h-2.5 w-2.5" />
+                      </button>
+                    </div>
+                  )}
                 </div>
               </div>
             )}

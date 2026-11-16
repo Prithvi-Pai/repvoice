@@ -400,6 +400,56 @@ export default function SettingsPage() {
         </div>
       </div>
 
+      {/* Athlete Anatomy & Gender (Controls Anatomical Heatmap) */}
+      <div className="p-4 rounded-2xl bg-zinc-950 border border-zinc-800 space-y-3 shadow-lg">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2 text-white font-bold text-sm">
+            <User className="h-4 w-4 text-zinc-300" />
+            <span>Athlete Anatomy & Silhouette</span>
+          </div>
+          <span className="text-[10px] font-bold text-zinc-300 bg-zinc-800 px-2 py-0.5 rounded-full uppercase border border-zinc-700">
+            Heatmap
+          </span>
+        </div>
+
+        <p className="text-xs text-zinc-400">
+          Choose your silhouette to customize the Muscle Group Distribution heatmap on your Home dashboard.
+        </p>
+
+        <div className="grid grid-cols-3 p-1 rounded-xl bg-black border border-zinc-850">
+          <button
+            onClick={() => updateProfileSetting('gender', 'male')}
+            className={`py-2 rounded-lg text-xs font-bold transition ${
+              (profile.gender || 'male') === 'male'
+                ? 'bg-zinc-800 text-white shadow font-extrabold'
+                : 'text-zinc-400 hover:text-white'
+            }`}
+          >
+            Man
+          </button>
+          <button
+            onClick={() => updateProfileSetting('gender', 'female')}
+            className={`py-2 rounded-lg text-xs font-bold transition ${
+              profile.gender === 'female'
+                ? 'bg-zinc-800 text-white shadow font-extrabold'
+                : 'text-zinc-400 hover:text-white'
+            }`}
+          >
+            Woman
+          </button>
+          <button
+            onClick={() => updateProfileSetting('gender', 'other')}
+            className={`py-2 rounded-lg text-xs font-bold transition ${
+              profile.gender === 'other'
+                ? 'bg-zinc-800 text-white shadow font-extrabold'
+                : 'text-zinc-400 hover:text-white'
+            }`}
+          >
+            Neutral
+          </button>
+        </div>
+      </div>
+
       {/* Supabase Connection Test */}
       <div className="p-4 rounded-2xl bg-zinc-950 border border-zinc-800 space-y-3 shadow-lg">
         <div className="flex items-center justify-between">

@@ -86,6 +86,16 @@ import {
   releaseGymNoiseReduction,
 } from '@/lib/voice/audioCaptureEnhancer';
 import { GymAudioIntelligence } from '@/components/audio/GymAudioIntelligence';
+import { ProgressiveOverloadSection } from '@/components/home/ProgressiveOverloadSection';
+import { MuscleDistributionSection } from '@/components/home/MuscleDistributionSection';
+import { MuscleGroupPromptModal } from '@/components/workout/MuscleGroupPromptModal';
+import {
+  identifyExerciseMuscleGroup,
+  saveCustomExerciseMuscle,
+  getWorkoutMuscleGroupsSummary,
+  MUSCLE_GROUP_LABELS,
+} from '@/lib/exercises/muscleGroupStore';
+import { Gender, MuscleGroup } from '@/types';
 import { generateDailyRecommendation } from '@/lib/recommendation/recommendationEngine';
 import { getLocalDateKey, generateDefaultWorkoutName, isGenericWorkoutTitle } from '@/lib/history/dateGrouping';
 import { WorkoutReviewModal } from '@/components/workout/WorkoutReviewModal';
@@ -125,6 +135,8 @@ export default function WorkoutPage() {
     }
   }, [user]);
   const [preferredUnit, setPreferredUnit] = useState<WeightUnit>('kg');
+  const [userGender, setUserGender] = useState<Gender>('male');
+  const [musclePromptExercise, setMusclePromptExercise] = useState<string | null>(null);
   const [clarificationState, setClarificationState] = useState<ClarificationState | null>(null);
 
   // Independent per-set active timers (keyed by set.id)
@@ -207,6 +219,7 @@ export default function WorkoutPage() {
     const profile = getStoredProfile();
     const unit = profile.preferredUnit || 'kg';
     setPreferredUnit(unit);
+    setUserGender(profile.gender || 'male');
     refreshRecommendations(unit);
 
     getWorkoutPlans().then((res) => {
@@ -255,7 +268,17 @@ export default function WorkoutPage() {
       }
     });
 
+    const handleSyncProfile = () => {
+      const p = getStoredProfile();
+      if (p.gender) setUserGender(p.gender);
+      if (p.preferredUnit) setPreferredUnit(p.preferredUnit);
+    };
+    window.addEventListener('focus', handleSyncProfile);
+    window.addEventListener('storage', handleSyncProfile);
+
     return () => {
+      window.removeEventListener('focus', handleSyncProfile);
+      window.removeEventListener('storage', handleSyncProfile);
       if (authSubscription) authSubscription.unsubscribe();
     };
   }, [refreshRecommendations]);
@@ -541,9 +564,46 @@ export default function WorkoutPage() {
         type: 'success',
         message: `Logged ${cleanName}: ${weight} ${pending.unit} × ${reps} reps. Learned alias for "${phrase}"!`,
       });
+      checkAndPromptMuscleGroup(cleanName);
     },
     [activeWorkout, setTimerSeconds, handleStartWorkout, updateWorkout, updateSelectedExerciseId, playSoundChime]
   );
+
+  // Muscle group classification check for custom / unknown user exercise names
+  const checkAndPromptMuscleGroup = useCallback((exerciseName: string) => {
+    if (!exerciseName || exerciseName.trim().toLowerCase() === 'exercise') return;
+    const { isKnown } = identifyExerciseMuscleGroup(exerciseName);
+    if (!isKnown) {
+      setMusclePromptExercise(exerciseName.trim());
+    }
+  }, []);
+
+  const handleSelectMuscleGroupForExercise = async (group: MuscleGroup) => {
+    if (!musclePromptExercise) return;
+    const exName = musclePromptExercise;
+    setMusclePromptExercise(null);
+
+    await saveCustomExerciseMuscle(exName, group);
+
+    const currentW = activeWorkoutRef.current || activeWorkout;
+    if (currentW) {
+      const updatedExercises = currentW.exercises.map((ex) =>
+        ex.exerciseName.toLowerCase() === exName.toLowerCase()
+          ? { ...ex, muscleGroup: group }
+          : ex
+      );
+      updateWorkout({
+        ...currentW,
+        exercises: updatedExercises,
+        muscleGroupDescription: getWorkoutMuscleGroupsSummary({ ...currentW, exercises: updatedExercises }),
+      });
+    }
+
+    setSaveStatus({
+      type: 'success',
+      message: `Categorized "${exName}" under ${MUSCLE_GROUP_LABELS[group]}. RepVoice will remember this!`,
+    });
+  };
 
   // Execute direct set insertion/update
   const executeDirectSetCommand = useCallback(
@@ -635,6 +695,7 @@ export default function WorkoutPage() {
             exerciseName: command.exercise,
             sets: [newSet],
           });
+          checkAndPromptMuscleGroup(command.exercise);
         }
 
         setSaveStatus({
@@ -647,7 +708,7 @@ export default function WorkoutPage() {
       updateSelectedExerciseId(targetExerciseId);
       playSoundChime();
     },
-    [setTimerSeconds, updateWorkout, updateSelectedExerciseId, playSoundChime]
+    [setTimerSeconds, updateWorkout, updateSelectedExerciseId, playSoundChime, checkAndPromptMuscleGroup]
   );
 
   // Toggle inline timer directly on a set row (Feature: Inline Set Timer)
@@ -1628,6 +1689,7 @@ export default function WorkoutPage() {
     });
     updateSelectedExerciseId(newExId);
     setQuickExerciseInput('');
+    checkAndPromptMuscleGroup(name);
   };
 
   // Set management
@@ -1771,11 +1833,13 @@ export default function WorkoutPage() {
         type: 'info',
         message: `Merged ${targetEx.sets.length} sets from "${targetEx.exerciseName}" into "${destinationEx.exerciseName}".`,
       });
+      checkAndPromptMuscleGroup(cleanTitle);
     } else {
       // Update exercise name in place, preserving all sets
       const updatedExercises = [...currentW.exercises];
       updatedExercises[exerciseIndex] = { ...targetEx, exerciseName: cleanTitle };
       updateWorkout({ ...currentW, exercises: updatedExercises });
+      checkAndPromptMuscleGroup(cleanTitle);
     }
   };
 
@@ -2197,6 +2261,19 @@ export default function WorkoutPage() {
 
           {/* Gym Audio Intelligence Feature */}
           <GymAudioIntelligence />
+
+          {/* Progressive Overload & Strength Benchmarks */}
+          <ProgressiveOverloadSection
+            workoutHistory={workoutHistory}
+            preferredUnit={preferredUnit}
+          />
+
+          {/* Muscle Group Distribution & Anatomical Silhouette Heatmap */}
+          <MuscleDistributionSection
+            workoutHistory={workoutHistory}
+            gender={userGender}
+            preferredUnit={preferredUnit}
+          />
 
           {/* Recent Activity Snippet */}
           {lastWorkout && (
@@ -2895,6 +2972,14 @@ export default function WorkoutPage() {
           onDismiss={() => setClarificationState(null)}
         />
       )}
+
+      {/* Custom Exercise Muscle Group Disambiguation Modal */}
+      <MuscleGroupPromptModal
+        isOpen={Boolean(musclePromptExercise)}
+        exerciseName={musclePromptExercise || ''}
+        onSelectMuscleGroup={handleSelectMuscleGroupForExercise}
+        onClose={() => setMusclePromptExercise(null)}
+      />
 
       {/* Persistent Bottom Nav */}
       <BottomNav hasActiveWorkout={Boolean(activeWorkout)} />

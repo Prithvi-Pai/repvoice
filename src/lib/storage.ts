@@ -11,6 +11,7 @@ const LOCAL_STORAGE_PROFILE = 'repvoice_profile';
 const DEFAULT_PROFILE: UserProfile = {
   id: 'guest_user',
   displayName: 'Alex Rivera',
+  gender: 'male',
   preferredUnit: 'lbs',
   recognitionMode: 'continuous',
   spokenConfirmations: true,
