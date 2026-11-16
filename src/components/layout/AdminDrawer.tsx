@@ -56,8 +56,9 @@ export function AdminDrawer({ isOpen, onClose }: AdminDrawerProps) {
 
   useEffect(() => {
     if (isOpen) {
-      setProfile(getStoredProfile());
-      if (user) {
+      const loaded = getStoredProfile();
+      setProfile(loaded);
+      if (user && loaded.id !== user.id) {
         syncUserProfileFromCloud(user).then((p) => setProfile(p));
       }
 
@@ -75,9 +76,11 @@ export function AdminDrawer({ isOpen, onClose }: AdminDrawerProps) {
   if (!isOpen) return null;
 
   const updateSetting = <K extends keyof UserProfile>(key: K, value: UserProfile[K]) => {
-    const updated = { ...profile, [key]: value };
-    setProfile(updated);
-    saveStoredProfile(updated);
+    setProfile((prev) => {
+      const updated = { ...prev, [key]: value };
+      saveStoredProfile(updated);
+      return updated;
+    });
     setSyncNotice(user ? 'Synced' : 'Saved');
     setTimeout(() => setSyncNotice(null), 2000);
   };
@@ -275,52 +278,80 @@ export function AdminDrawer({ isOpen, onClose }: AdminDrawerProps) {
           </div>
 
           {/* Section 3: Units (kg/lbs) & Rest Interval */}
-          <div className="p-3.5 rounded-2xl bg-black border border-zinc-850 space-y-3">
-            <div className="flex items-center gap-2">
-              <Scale className="h-4 w-4 text-zinc-300" />
-              <span className="text-xs font-bold text-white">Units & Rest Timer</span>
+          <div className="p-3.5 rounded-2xl bg-black border border-zinc-850 space-y-3.5">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Scale className="h-4 w-4 text-zinc-300" />
+                <span className="text-xs font-bold text-white">Units & Rest Timer</span>
+              </div>
+              {syncNotice && (
+                <span className="text-[10px] font-bold text-white bg-zinc-900 border border-zinc-700 px-2 py-0.5 rounded-full">
+                  {syncNotice}
+                </span>
+              )}
             </div>
 
-            <div className="grid grid-cols-2 gap-2">
-              <div>
-                <label className="text-[10px] font-bold uppercase text-zinc-400 block mb-1">
+            {/* Weight Unit */}
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <label className="text-[10px] font-bold uppercase text-zinc-400 block">
                   Weight Unit
                 </label>
-                <div className="grid grid-cols-2 p-1 rounded-xl bg-zinc-950 border border-zinc-850">
-                  <button
-                    onClick={() => updateSetting('preferredUnit', 'lbs')}
-                    className={`py-1.5 rounded-lg text-xs font-bold transition ${
-                      profile.preferredUnit === 'lbs' ? 'bg-zinc-800 text-white shadow' : 'text-zinc-400 hover:text-white'
-                    }`}
-                  >
-                    lbs
-                  </button>
-                  <button
-                    onClick={() => updateSetting('preferredUnit', 'kg')}
-                    className={`py-1.5 rounded-lg text-xs font-bold transition ${
-                      profile.preferredUnit === 'kg' ? 'bg-zinc-800 text-white shadow' : 'text-zinc-400 hover:text-white'
-                    }`}
-                  >
-                    kg
-                  </button>
-                </div>
+                <span className="text-[10px] font-mono font-bold text-zinc-300 uppercase">
+                  Active: {profile.preferredUnit}
+                </span>
               </div>
-
-              <div>
-                <label className="text-[10px] font-bold uppercase text-zinc-400 block mb-1">
-                  Default Rest
-                </label>
-                <select
-                  value={profile.defaultRestTimerSeconds || 90}
-                  onChange={(e) => updateSetting('defaultRestTimerSeconds', parseInt(e.target.value) || 90)}
-                  className="w-full bg-zinc-950 border border-zinc-850 rounded-xl px-2 py-1.5 text-xs text-white focus:outline-none focus:border-zinc-500"
+              <div className="grid grid-cols-2 p-1 rounded-xl bg-zinc-950 border border-zinc-850 gap-1">
+                <button
+                  type="button"
+                  onClick={() => updateSetting('preferredUnit', 'lbs')}
+                  className={`py-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${
+                    profile.preferredUnit === 'lbs'
+                      ? 'bg-white text-black font-extrabold shadow-sm'
+                      : 'text-zinc-400 hover:text-white hover:bg-zinc-900'
+                  }`}
                 >
-                  <option value="30">30s</option>
-                  <option value="60">60s</option>
-                  <option value="90">90s</option>
-                  <option value="120">2m</option>
-                  <option value="180">3m</option>
-                </select>
+                  Pounds (lbs)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => updateSetting('preferredUnit', 'kg')}
+                  className={`py-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${
+                    profile.preferredUnit === 'kg'
+                      ? 'bg-white text-black font-extrabold shadow-sm'
+                      : 'text-zinc-400 hover:text-white hover:bg-zinc-900'
+                  }`}
+                >
+                  Kilos (kg)
+                </button>
+              </div>
+            </div>
+
+            {/* Default Rest Timer */}
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <label className="text-[10px] font-bold uppercase text-zinc-400 block">
+                  Default Rest Timer
+                </label>
+                <span className="text-[10px] font-mono font-bold text-zinc-300">
+                  {profile.defaultRestTimerSeconds || 90}s
+                </span>
+              </div>
+              <div className="grid grid-cols-5 p-1 rounded-xl bg-zinc-950 border border-zinc-850 gap-1 text-center">
+                {[30, 60, 90, 120, 180].map((sec) => (
+                  <button
+                    key={sec}
+                    type="button"
+                    onClick={() => updateSetting('defaultRestTimerSeconds', sec)}
+                    className={`py-1 rounded-lg text-[11px] font-bold transition cursor-pointer ${
+                      (profile.defaultRestTimerSeconds || 90) === sec
+                        ? 'bg-white text-black font-extrabold shadow-sm'
+                        : 'text-zinc-400 hover:text-white hover:bg-zinc-900'
+                    }`}
+                  >
+                    {sec >= 60 ? `${sec / 60}m` : `${sec}s`}
+                  </button>
+                ))}
               </div>
             </div>
 
@@ -329,13 +360,16 @@ export function AdminDrawer({ isOpen, onClose }: AdminDrawerProps) {
               <label className="text-[10px] font-bold uppercase text-zinc-400 block mb-1">
                 Anatomy Heatmap Silhouette
               </label>
-              <div className="grid grid-cols-3 p-1 rounded-xl bg-zinc-950 border border-zinc-850 text-center">
+              <div className="grid grid-cols-3 p-1 rounded-xl bg-zinc-950 border border-zinc-850 text-center gap-1">
                 {(['male', 'female', 'other'] as const).map((g) => (
                   <button
                     key={g}
+                    type="button"
                     onClick={() => updateSetting('gender', g)}
-                    className={`py-1 rounded-lg text-xs font-bold capitalize transition ${
-                      (profile.gender || 'male') === g ? 'bg-zinc-800 text-white shadow font-extrabold' : 'text-zinc-400 hover:text-white'
+                    className={`py-1.5 rounded-lg text-xs font-bold capitalize transition cursor-pointer ${
+                      (profile.gender || 'male') === g
+                        ? 'bg-white text-black font-extrabold shadow-sm'
+                        : 'text-zinc-400 hover:text-white hover:bg-zinc-900'
                     }`}
                   >
                     {g === 'male' ? 'Man' : g === 'female' ? 'Woman' : 'Neutral'}

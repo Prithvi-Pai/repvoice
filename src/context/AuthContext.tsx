@@ -78,11 +78,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // Subscribe to real-time auth changes (SIGNED_IN, SIGNED_OUT, TOKEN_REFRESHED, etc.)
     const {
       data: { subscription },
-    } = client.auth.onAuthStateChange((_event, currentSession) => {
+    } = client.auth.onAuthStateChange((event, currentSession) => {
       if (currentSession?.user) {
         setSession(currentSession);
         setUser(currentSession.user);
-        syncUserProfileFromCloud(currentSession.user).catch(() => {});
+        // Only pull cloud profile on explicit user login, never on self-triggered USER_UPDATED
+        if (event === 'SIGNED_IN') {
+          syncUserProfileFromCloud(currentSession.user).catch(() => {});
+        }
       } else {
         setSession(null);
         setUser(null);

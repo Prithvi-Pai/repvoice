@@ -84,7 +84,7 @@ export default function SettingsPage() {
   useEffect(() => {
     const loaded = getStoredProfile();
     setProfile(loaded);
-    if (user) {
+    if (user && loaded.id !== user.id) {
       syncUserProfileFromCloud(user).then((p) => setProfile(p));
     }
 
@@ -107,9 +107,11 @@ export default function SettingsPage() {
   }, [user]);
 
   const updateProfileSetting = <K extends keyof UserProfile>(key: K, value: UserProfile[K]) => {
-    const updated = { ...profile, [key]: value };
-    setProfile(updated);
-    saveStoredProfile(updated);
+    setProfile((prev) => {
+      const updated = { ...prev, [key]: value };
+      saveStoredProfile(updated);
+      return updated;
+    });
     setSyncNotice(user ? 'Saved & synced to account' : 'Saved locally');
     setTimeout(() => setSyncNotice(null), 2500);
   };
@@ -396,34 +398,42 @@ export default function SettingsPage() {
       </div>
 
       {/* Preferred Weight Unit & Default Rest Timer */}
-      <div className="p-4 rounded-2xl bg-zinc-950 border border-zinc-800 space-y-3 shadow-lg">
+      <div className="p-4 rounded-2xl bg-zinc-950 border border-zinc-800 space-y-3.5 shadow-lg">
         <div className="flex items-center gap-2 text-white font-bold text-sm">
           <Scale className="h-4 w-4 text-zinc-300" />
           <span>Units & Rest Interval</span>
         </div>
 
-        <div className="grid grid-cols-2 gap-3">
+        <div className="space-y-3">
+          {/* Weight Unit Selection */}
           <div>
-            <label className="text-[10px] font-bold uppercase tracking-wider text-zinc-400 block mb-1">
-              Weight Unit
-            </label>
-            <div className="grid grid-cols-2 p-1 rounded-xl bg-black border border-zinc-850">
+            <div className="flex items-center justify-between mb-1.5">
+              <label className="text-[10px] font-bold uppercase tracking-wider text-zinc-400 block">
+                Preferred Weight Unit
+              </label>
+              <span className="text-[10px] font-extrabold uppercase font-mono text-zinc-200 bg-zinc-900 border border-zinc-800 px-2 py-0.5 rounded-md">
+                Active: {profile.preferredUnit}
+              </span>
+            </div>
+            <div className="grid grid-cols-2 p-1 rounded-xl bg-black border border-zinc-850 gap-1">
               <button
+                type="button"
                 onClick={() => updateProfileSetting('preferredUnit', 'lbs')}
-                className={`py-1.5 rounded-lg text-xs font-bold transition ${
+                className={`py-2 rounded-lg text-xs font-bold transition cursor-pointer ${
                   profile.preferredUnit === 'lbs'
-                    ? 'bg-zinc-800 text-white shadow'
-                    : 'text-zinc-400 hover:text-white'
+                    ? 'bg-white text-black font-extrabold shadow-md'
+                    : 'text-zinc-400 hover:text-white hover:bg-zinc-900'
                 }`}
               >
                 Pounds (lbs)
               </button>
               <button
+                type="button"
                 onClick={() => updateProfileSetting('preferredUnit', 'kg')}
-                className={`py-1.5 rounded-lg text-xs font-bold transition ${
+                className={`py-2 rounded-lg text-xs font-bold transition cursor-pointer ${
                   profile.preferredUnit === 'kg'
-                    ? 'bg-zinc-800 text-white shadow'
-                    : 'text-zinc-400 hover:text-white'
+                    ? 'bg-white text-black font-extrabold shadow-md'
+                    : 'text-zinc-400 hover:text-white hover:bg-zinc-900'
                 }`}
               >
                 Kilos (kg)
@@ -431,21 +441,33 @@ export default function SettingsPage() {
             </div>
           </div>
 
+          {/* Default Rest Timer Selection */}
           <div>
-            <label className="text-[10px] font-bold uppercase tracking-wider text-zinc-400 block mb-1">
-              Default Rest
-            </label>
-            <select
-              value={profile.defaultRestTimerSeconds || 90}
-              onChange={(e) => updateProfileSetting('defaultRestTimerSeconds', parseInt(e.target.value) || 90)}
-              className="w-full bg-black border border-zinc-800 rounded-xl px-2.5 py-2 text-xs text-white focus:outline-none focus:border-zinc-500"
-            >
-              <option value="30">30 seconds</option>
-              <option value="60">60 seconds</option>
-              <option value="90">90 seconds</option>
-              <option value="120">2 minutes</option>
-              <option value="180">3 minutes</option>
-            </select>
+            <div className="flex items-center justify-between mb-1.5">
+              <label className="text-[10px] font-bold uppercase tracking-wider text-zinc-400 block">
+                Default Rest Timer
+              </label>
+              <span className="text-[10px] font-extrabold font-mono text-zinc-200 bg-zinc-900 border border-zinc-800 px-2 py-0.5 rounded-md">
+                {profile.defaultRestTimerSeconds || 90}s ({Math.floor((profile.defaultRestTimerSeconds || 90) / 60)}m {((profile.defaultRestTimerSeconds || 90) % 60) > 0 ? `${(profile.defaultRestTimerSeconds || 90) % 60}s` : ''})
+              </span>
+            </div>
+            {/* Quick-Tap Timer Pills */}
+            <div className="grid grid-cols-5 p-1 rounded-xl bg-black border border-zinc-850 gap-1 text-center">
+              {[30, 60, 90, 120, 180].map((sec) => (
+                <button
+                  key={sec}
+                  type="button"
+                  onClick={() => updateProfileSetting('defaultRestTimerSeconds', sec)}
+                  className={`py-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${
+                    (profile.defaultRestTimerSeconds || 90) === sec
+                      ? 'bg-white text-black font-extrabold shadow-md'
+                      : 'text-zinc-400 hover:text-white hover:bg-zinc-900'
+                  }`}
+                >
+                  {sec >= 60 ? `${sec / 60}m` : `${sec}s`}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
       </div>
@@ -466,33 +488,36 @@ export default function SettingsPage() {
           Choose your silhouette to customize the Muscle Group Distribution heatmap on your Home dashboard.
         </p>
 
-        <div className="grid grid-cols-3 p-1 rounded-xl bg-black border border-zinc-850">
+        <div className="grid grid-cols-3 p-1 rounded-xl bg-black border border-zinc-850 gap-1">
           <button
+            type="button"
             onClick={() => updateProfileSetting('gender', 'male')}
-            className={`py-2 rounded-lg text-xs font-bold transition ${
+            className={`py-2 rounded-lg text-xs font-bold transition cursor-pointer ${
               (profile.gender || 'male') === 'male'
-                ? 'bg-zinc-800 text-white shadow font-extrabold'
-                : 'text-zinc-400 hover:text-white'
+                ? 'bg-white text-black font-extrabold shadow-md'
+                : 'text-zinc-400 hover:text-white hover:bg-zinc-900'
             }`}
           >
             Man
           </button>
           <button
+            type="button"
             onClick={() => updateProfileSetting('gender', 'female')}
-            className={`py-2 rounded-lg text-xs font-bold transition ${
+            className={`py-2 rounded-lg text-xs font-bold transition cursor-pointer ${
               profile.gender === 'female'
-                ? 'bg-zinc-800 text-white shadow font-extrabold'
-                : 'text-zinc-400 hover:text-white'
+                ? 'bg-white text-black font-extrabold shadow-md'
+                : 'text-zinc-400 hover:text-white hover:bg-zinc-900'
             }`}
           >
             Woman
           </button>
           <button
+            type="button"
             onClick={() => updateProfileSetting('gender', 'other')}
-            className={`py-2 rounded-lg text-xs font-bold transition ${
+            className={`py-2 rounded-lg text-xs font-bold transition cursor-pointer ${
               profile.gender === 'other'
-                ? 'bg-zinc-800 text-white shadow font-extrabold'
-                : 'text-zinc-400 hover:text-white'
+                ? 'bg-white text-black font-extrabold shadow-md'
+                : 'text-zinc-400 hover:text-white hover:bg-zinc-900'
             }`}
           >
             Neutral

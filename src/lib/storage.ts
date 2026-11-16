@@ -153,24 +153,33 @@ export async function syncUserProfileFromCloud(providedUser?: any): Promise<User
       }
     }
 
-    // Merge: DEFAULT < userCached < cloudProfile
-    const merged: UserProfile = {
-      ...DEFAULT_PROFILE,
-      ...userCachedProfile,
-      ...cloudProfile,
-      id: userId,
-      email: authUser.email || currentLocal.email,
-    };
+    // Determine precedence:
+    // If user on this browser already has this account's settings, local is authoritative (never revert fresh clicks).
+    // If this is a fresh login on a new device/browser (guest profile currently active), cloud settings are authoritative.
+    const isLocalCustomizedForThisUser = currentLocal && currentLocal.id === userId;
 
-    // If cloud had no settings yet, push local settings to cloud
-    if (!cloudProfile && (currentLocal.preferredUnit || currentLocal.gender)) {
-      merged.preferredUnit = currentLocal.preferredUnit || 'lbs';
-      merged.gender = currentLocal.gender || 'male';
-      merged.defaultRestTimerSeconds = currentLocal.defaultRestTimerSeconds || 90;
-      merged.microphoneSensitivity = currentLocal.microphoneSensitivity || 'aggressive';
-      merged.spokenConfirmations = currentLocal.spokenConfirmations !== false;
-      merged.beepOnRecord = currentLocal.beepOnRecord !== false;
-      merged.recognitionMode = currentLocal.recognitionMode || 'continuous';
+    const merged: UserProfile = isLocalCustomizedForThisUser
+      ? {
+          ...DEFAULT_PROFILE,
+          ...cloudProfile,
+          ...userCachedProfile,
+          ...currentLocal, // Local authoritative!
+          id: userId,
+          email: authUser.email || currentLocal.email,
+        }
+      : {
+          ...DEFAULT_PROFILE,
+          ...currentLocal,
+          ...cloudProfile, // Cloud authoritative on fresh login!
+          id: userId,
+          email: authUser.email || cloudProfile?.email || currentLocal.email,
+        };
+
+    // If local settings were authoritative, push to cloud to keep cloud in sync
+    if (isLocalCustomizedForThisUser) {
+      persistProfileToCloud(merged).catch(() => {});
+    } else if (!cloudProfile && (currentLocal.preferredUnit || currentLocal.gender)) {
+      // If cloud was empty, seed cloud with local choices
       persistProfileToCloud(merged).catch(() => {});
     }
 
