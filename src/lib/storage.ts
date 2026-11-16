@@ -2,10 +2,12 @@ import { Workout, WorkoutExercise, WorkoutSet, UserProfile, SaveWorkoutResult } 
 import { getSupabaseClient } from './supabase/client';
 import { evaluateWorkoutPRs, getPersonalRecords, savePersonalRecords } from './records/personalRecordEngine';
 import { calculateEstimatedCalories } from './analytics/metricsEngine';
+import { getLocalDateKey, getTodayAndYesterdayKeys } from './history/dateGrouping';
 
 const LOCAL_STORAGE_ACTIVE_WORKOUT = 'repvoice_active_workout';
 const LOCAL_STORAGE_HISTORY = 'repvoice_history';
 const LOCAL_STORAGE_PROFILE = 'repvoice_profile';
+export const LOCAL_STORAGE_RESUMABLE_SESSION = 'repvoice_resumable_session';
 
 const DEFAULT_PROFILE: UserProfile = {
   id: 'guest_user',
@@ -62,6 +64,169 @@ export function saveActiveWorkout(workout: Workout | null): void {
   } else {
     localStorage.setItem(LOCAL_STORAGE_ACTIVE_WORKOUT, JSON.stringify(workout));
   }
+}
+
+/**
+ * Returns the timestamp in milliseconds of the most recent set activity in a workout.
+ */
+export function getLatestSetTimestamp(workout: Workout): number | null {
+  let latest: number | null = null;
+  for (const ex of workout.exercises) {
+    for (const s of ex.sets) {
+      if (s.completedAt) {
+        const ms = new Date(s.completedAt).getTime();
+        if (!isNaN(ms) && (latest === null || ms > latest)) latest = ms;
+      }
+      if (s.startedAt) {
+        const ms = new Date(s.startedAt).getTime();
+        if (!isNaN(ms) && (latest === null || ms > latest)) latest = ms;
+      }
+    }
+  }
+  return latest;
+}
+
+/**
+ * Auto-saves an active in-progress workout when 1 hour elapses without entries or upon user logout.
+ * Calculates effective active duration up to the last entry, stops the timer, and marks it resumable for today.
+ */
+export async function autoSaveActiveWorkout(
+  reason: 'inactivity' | 'logout' = 'inactivity'
+): Promise<Workout | null> {
+  const current = getActiveWorkout();
+  if (!current) return null;
+
+  // If there are no exercises and no sets, simply discard empty scratch workout
+  const hasLoggedSets = current.exercises.some((e) => e.sets.length > 0);
+  if (!hasLoggedSets && current.exercises.length === 0) {
+    saveActiveWorkout(null);
+    return null;
+  }
+
+  const startTime = new Date(current.startedAt).getTime();
+  const lastEntryTime = current.lastEntryAt
+    ? new Date(current.lastEntryAt).getTime()
+    : getLatestSetTimestamp(current) || startTime;
+
+  // Calculate duration up to the last entry (preventing empty idle hours from inflating stats)
+  const effectiveDuration = Math.max(0, Math.floor((lastEntryTime - startTime) / 1000));
+
+  const workoutToSave: Workout = {
+    ...current,
+    completedAt: new Date(lastEntryTime).toISOString(),
+    durationSeconds: effectiveDuration,
+    isAutoSaved: true,
+    notes:
+      current.notes ||
+      (reason === 'inactivity'
+        ? 'Auto-saved after 1 hour without entries'
+        : 'Auto-saved on sign out'),
+  };
+
+  // Save to Supabase and localStorage history
+  await saveFinishedWorkout(workoutToSave);
+
+  // Record resumable session marker for today so next login or History can resume it
+  if (typeof window !== 'undefined') {
+    const todayKey = getLocalDateKey(new Date());
+    localStorage.setItem(
+      LOCAL_STORAGE_RESUMABLE_SESSION,
+      JSON.stringify({
+        workoutId: workoutToSave.id,
+        dateKey: todayKey,
+        reason,
+        savedAt: new Date().toISOString(),
+      })
+    );
+  }
+
+  // Clear active workout from active slot
+  saveActiveWorkout(null);
+
+  return workoutToSave;
+}
+
+/**
+ * Checks if there is a pending resumable session from today.
+ */
+export function getResumableSession(): { workoutId: string; dateKey: string; reason: string } | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = localStorage.getItem(LOCAL_STORAGE_RESUMABLE_SESSION);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    const { todayKey } = getTodayAndYesterdayKeys();
+    if (parsed.dateKey === todayKey && parsed.workoutId) {
+      return parsed;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Clears the resumable session marker from localStorage.
+ */
+export function clearResumableSession(): void {
+  if (typeof window !== 'undefined') {
+    localStorage.removeItem(LOCAL_STORAGE_RESUMABLE_SESSION);
+  }
+}
+
+/**
+ * Resumes a completed/auto-saved workout from history so the user can continue logging sets today.
+ * Restores its exercises, sets, adjusts startedAt to resume the timer, and removes it from completed history.
+ */
+export async function resumeWorkoutFromHistory(workoutId: string): Promise<Workout | null> {
+  const { workouts } = await getWorkoutHistory();
+  const target = workouts.find((w) => w.id === workoutId);
+  if (!target) return null;
+
+  // Adjust startedAt so the timer resumes seamlessly with previous active duration
+  const priorDuration = target.durationSeconds || 0;
+  const adjustedStartedAt = new Date(Date.now() - priorDuration * 1000).toISOString();
+
+  const resumed: Workout = {
+    ...target,
+    startedAt: adjustedStartedAt,
+    completedAt: undefined,
+    lastEntryAt: new Date().toISOString(),
+    isResumed: true,
+  };
+
+  // Remove the completed entry from history so it doesn't duplicate while active
+  await deleteWorkoutFromHistory(workoutId);
+
+  // Set as the active workout
+  saveActiveWorkout(resumed);
+
+  // Clear resumable marker
+  clearResumableSession();
+
+  return resumed;
+}
+
+/**
+ * Checks if the current active workout has had no entries for 1 hour.
+ * If so, automatically stops the timer and saves the workout to history.
+ */
+export async function checkAndHandleInactivityTimeout(): Promise<Workout | null> {
+  const current = getActiveWorkout();
+  if (!current) return null;
+
+  const startTime = new Date(current.startedAt).getTime();
+  const lastEntryTime = current.lastEntryAt
+    ? new Date(current.lastEntryAt).getTime()
+    : getLatestSetTimestamp(current) || startTime;
+
+  const oneHourMs = 60 * 60 * 1000;
+  if (Date.now() - lastEntryTime >= oneHourMs) {
+    console.info('[RepVoice] Inactivity timeout: 1 hour without entries. Auto-saving workout.');
+    return await autoSaveActiveWorkout('inactivity');
+  }
+
+  return null;
 }
 
 // Workout History

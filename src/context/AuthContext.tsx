@@ -95,6 +95,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const signOut = useCallback(async () => {
     setIsLoading(true);
     try {
+      // Auto-save any active workout on logout so the timer stops and session is safely preserved
+      if (typeof window !== 'undefined') {
+        try {
+          const { autoSaveActiveWorkout } = await import('@/lib/storage');
+          await autoSaveActiveWorkout('logout');
+        } catch (saveErr) {
+          console.warn('[RepVoice Auth] Notice while auto-saving workout on signOut:', saveErr);
+        }
+      }
       const client = getSupabaseClient();
       if (client) {
         await client.auth.signOut();

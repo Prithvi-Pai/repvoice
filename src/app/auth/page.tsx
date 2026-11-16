@@ -14,7 +14,7 @@ import {
   Dumbbell
 } from 'lucide-react';
 import { getSupabaseClient } from '@/lib/supabase/client';
-import { getActiveWorkout } from '@/lib/storage';
+import { getActiveWorkout, getResumableSession } from '@/lib/storage';
 import { useAuth } from '@/context/AuthContext';
 
 export default function AuthPage() {
@@ -29,7 +29,7 @@ export default function AuthPage() {
   const [hasActiveWorkout, setHasActiveWorkout] = useState(false);
 
   useEffect(() => {
-    setHasActiveWorkout(Boolean(getActiveWorkout()));
+    setHasActiveWorkout(Boolean(getActiveWorkout()) || Boolean(getResumableSession()));
   }, []);
 
   const handleAuth = async (e: React.FormEvent) => {

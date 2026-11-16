@@ -58,6 +58,9 @@ export interface Workout {
   title: string;
   startedAt: string;
   completedAt?: string;
+  lastEntryAt?: string;
+  isAutoSaved?: boolean;
+  isResumed?: boolean;
   notes?: string;
   exercises: WorkoutExercise[];
   durationSeconds?: number;

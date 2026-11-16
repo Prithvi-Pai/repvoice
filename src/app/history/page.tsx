@@ -20,6 +20,7 @@ import {
   X,
   Pencil,
   Check,
+  Play,
 } from 'lucide-react';
 import { Workout, WorkoutExercise } from '@/types';
 import {
@@ -28,6 +29,8 @@ import {
   updateWorkoutTitle,
   updateWorkoutInHistory,
   saveActiveWorkout,
+  getActiveWorkout,
+  resumeWorkoutFromHistory,
 } from '@/lib/storage';
 import { toTitleCase, saveLearnedAlias } from '@/lib/exercises/exerciseStore';
 import { BottomNav } from '@/components/layout/BottomNav';
@@ -36,6 +39,8 @@ import {
   groupWorkoutsByDate,
   filterWorkoutsBySpecificDate,
   formatLocalDateLabel,
+  getLocalDateKey,
+  getTodayAndYesterdayKeys,
 } from '@/lib/history/dateGrouping';
 import { HistoryCalendarModal } from '@/components/history/HistoryCalendarModal';
 import { calculateMonthlyRollup } from '@/lib/analytics/metricsEngine';
@@ -361,6 +366,44 @@ export default function HistoryPage() {
     router.push('/');
   };
 
+  // Resume an existing completed/auto-saved workout from today
+  const handleResumeWorkout = async (workout: Workout) => {
+    const active = getActiveWorkout();
+    if (active && active.id !== workout.id && active.exercises.some((e) => e.sets.length > 0)) {
+      if (
+        !confirm(
+          `You already have an active workout in progress ("${active.title}"). Switch and resume "${workout.title}" from earlier today?`
+        )
+      ) {
+        return;
+      }
+    }
+
+    try {
+      const resumed = await resumeWorkoutFromHistory(workout.id);
+      if (resumed) {
+        setWorkouts((prev) => prev.filter((w) => w.id !== workout.id));
+        router.push('/');
+      } else {
+        const priorDuration = workout.durationSeconds || 0;
+        const adjustedStartedAt = new Date(Date.now() - priorDuration * 1000).toISOString();
+        const fallbackResumed: Workout = {
+          ...workout,
+          startedAt: adjustedStartedAt,
+          completedAt: undefined,
+          lastEntryAt: new Date().toISOString(),
+          isResumed: true,
+        };
+        saveActiveWorkout(fallbackResumed);
+        await deleteWorkoutFromHistory(workout.id);
+        setWorkouts((prev) => prev.filter((w) => w.id !== workout.id));
+        router.push('/');
+      }
+    } catch (err: any) {
+      alert(`Failed to resume workout: ${err?.message || err}`);
+    }
+  };
+
   // Helper to calculate duration in minutes
   const getDurationText = (w: Workout) => {
     if (!w.completedAt) return 'In progress';
@@ -386,6 +429,8 @@ export default function HistoryPage() {
     const isExpanded = expandedWorkoutId === workout.id;
     const volume = getWorkoutVolume(workout);
     const totalSets = workout.exercises.reduce((sum, ex) => sum + ex.sets.length, 0);
+    const { todayKey } = getTodayAndYesterdayKeys();
+    const isToday = getLocalDateKey(workout.startedAt || workout.completedAt || new Date()) === todayKey;
 
     return (
       <div
@@ -449,7 +494,20 @@ export default function HistoryPage() {
                 </div>
               </div>
             )}
-            <div className="flex items-center gap-1">
+            <div className="flex items-center gap-1.5">
+              {isToday && (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleResumeWorkout(workout);
+                  }}
+                  className="px-2.5 py-1 rounded-lg bg-white text-black hover:bg-zinc-200 text-[11px] font-black flex items-center gap-1 shadow-sm transition cursor-pointer shrink-0"
+                  title="Resume this session from earlier today"
+                >
+                  <Play className="h-3 w-3 fill-black" />
+                  <span>Resume</span>
+                </button>
+              )}
               <button
                 onClick={(e) => {
                   e.stopPropagation();
@@ -752,14 +810,27 @@ export default function HistoryPage() {
               </button>
             )}
 
-            {/* Action: Repeat Workout */}
-            <div className="pt-2">
+            {/* Actions: Resume Workout (Only for Today) & Repeat Workout */}
+            <div className="pt-2 space-y-2">
+              {isToday && (
+                <button
+                  onClick={() => handleResumeWorkout(workout)}
+                  className="w-full py-2.5 rounded-xl bg-white hover:bg-zinc-200 text-black font-black text-xs flex items-center justify-center gap-1.5 shadow-[0_2px_15px_rgba(255,255,255,0.15)] transition cursor-pointer"
+                >
+                  <Play className="h-3.5 w-3.5 fill-black" />
+                  Resume Today's Workout Session
+                </button>
+              )}
               <button
                 onClick={() => handleRepeat(workout)}
-                className="w-full py-2.5 rounded-xl bg-white hover:bg-zinc-200 text-black font-extrabold text-xs flex items-center justify-center gap-1.5 shadow-md transition cursor-pointer"
+                className={`w-full ${
+                  isToday
+                    ? 'py-2 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-zinc-750 text-zinc-300 hover:text-white font-bold'
+                    : 'py-2.5 rounded-xl bg-white hover:bg-zinc-200 text-black font-extrabold shadow-md'
+                } text-xs flex items-center justify-center gap-1.5 transition cursor-pointer`}
               >
                 <RotateCcw className="h-3.5 w-3.5" />
-                Repeat This Workout
+                {isToday ? 'Repeat As New Workout' : 'Repeat This Workout'}
               </button>
             </div>
           </div>
@@ -1050,7 +1121,7 @@ export default function HistoryPage() {
       )}
 
       {/* Bottom Nav */}
-      <BottomNav />
+      <BottomNav hasActiveWorkout={Boolean(getActiveWorkout())} />
     </div>
   );
 }
