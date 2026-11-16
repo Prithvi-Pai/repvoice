@@ -19,6 +19,7 @@ import { ProgressiveOverloadSection } from '@/components/home/ProgressiveOverloa
 import { MuscleDistributionSection } from '@/components/home/MuscleDistributionSection';
 import { ContinuousLearningSection } from '@/components/insights/ContinuousLearningSection';
 import { BottomNav } from '@/components/layout/BottomNav';
+import { calculateSetVolume } from '@/lib/utils/unitConversion';
 
 export default function InsightsPage() {
   const [workoutHistory, setWorkoutHistory] = useState<Workout[]>([]);
@@ -61,7 +62,7 @@ export default function InsightsPage() {
         return (
           exAcc +
           ex.sets.reduce((sAcc, s) => {
-            return sAcc + (s.isCompleted !== false ? (s.weight || 0) * (s.reps || 0) : 0);
+            return sAcc + (s.isCompleted !== false ? calculateSetVolume(s.weight, s.reps, s.unit, preferredUnit) : 0);
           }, 0)
         );
       }, 0)

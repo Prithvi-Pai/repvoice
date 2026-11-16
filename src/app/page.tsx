@@ -100,6 +100,7 @@ import { getLocalDateKey, generateDefaultWorkoutName, isGenericWorkoutTitle } fr
 import { WorkoutReviewModal } from '@/components/workout/WorkoutReviewModal';
 import { getPreviousPerformanceForExercise } from '@/lib/history/previousPerformance';
 import { calculateEstimatedCalories } from '@/lib/analytics/metricsEngine';
+import { calculateSetVolume } from '@/lib/utils/unitConversion';
 
 export default function WorkoutPage() {
   const [activeWorkout, setActiveWorkout] = useState<Workout | null>(null);
@@ -163,7 +164,7 @@ export default function WorkoutPage() {
         for (const ex of w.exercises) {
           for (const s of ex.sets) {
             if (s.isCompleted) {
-              weeklyVolume += (s.weight || 0) * (s.reps || 0);
+              weeklyVolume += calculateSetVolume(s.weight, s.reps, s.unit, preferredUnit);
             }
           }
         }
@@ -198,7 +199,7 @@ export default function WorkoutPage() {
       weeklyVolumeFormatted,
       totalWorkoutsCount: workoutHistory.length,
     };
-  }, [workoutHistory, dailyRecommendation, availablePlans]);
+  }, [workoutHistory, dailyRecommendation, availablePlans, preferredUnit]);
 
   const refreshRecommendations = useCallback((unit: WeightUnit) => {
     getWorkoutHistory().then((res) => {
@@ -1984,7 +1985,9 @@ export default function WorkoutPage() {
         return (
           sum +
           ex.sets.reduce((sSum, s) => {
-            return s.isCompleted ? sSum + s.weight * s.reps : sSum;
+            return s.isCompleted
+              ? sSum + calculateSetVolume(s.weight, s.reps, s.unit || preferredUnit, preferredUnit)
+              : sSum;
           }, 0)
         );
       }, 0)
@@ -2029,6 +2032,61 @@ export default function WorkoutPage() {
       {/* VIEW A: NO ACTIVE WORKOUT -> STITCH OBSIDIAN HOME SCREEN */}
       {!activeWorkout && (
         <div className="space-y-6 pt-1 select-none">
+          {/* Quick Stats Weekly Snapshot (Moved to Top) */}
+          <div className="flex flex-col gap-2">
+            <div className="flex items-center justify-between px-1">
+              <span className="text-xs font-bold uppercase tracking-wider text-zinc-400">
+                Weekly Snapshot
+              </span>
+              <span className="text-xs font-bold text-white flex items-center gap-1">
+                Active Cycle
+              </span>
+            </div>
+            <div className="grid grid-cols-3 gap-2.5">
+              {/* Streak */}
+              <div className="rounded-2xl bg-zinc-950 border border-zinc-800 p-3.5 flex flex-col justify-between shadow-sm">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-semibold text-zinc-400">Streak</span>
+                  <span className="text-sm leading-none">🔥</span>
+                </div>
+                <div className="mt-2">
+                  <span className="text-xl font-black text-white tracking-tight tabular-nums">
+                    {homeMetrics.streakDays}
+                  </span>
+                  <span className="text-xs text-zinc-400 ml-1">Days</span>
+                </div>
+              </div>
+
+              {/* Weekly Volume */}
+              <div className="rounded-2xl bg-zinc-950 border border-zinc-800 p-3.5 flex flex-col justify-between shadow-sm">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-semibold text-zinc-400">Volume</span>
+                  <Dumbbell className="h-4 w-4 text-zinc-400" />
+                </div>
+                <div className="mt-2">
+                  <span className="text-xl font-black text-white tracking-tight tabular-nums">
+                    {homeMetrics.weeklyVolumeFormatted}
+                  </span>
+                  <span className="text-xs text-zinc-400 ml-1">{preferredUnit}</span>
+                </div>
+              </div>
+
+              {/* Total Workouts */}
+              <div className="rounded-2xl bg-zinc-950 border border-zinc-800 p-3.5 flex flex-col justify-between shadow-sm">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-semibold text-zinc-400">Logged</span>
+                  <Trophy className="h-4 w-4 text-zinc-400" />
+                </div>
+                <div className="mt-2">
+                  <span className="text-xl font-black text-white tracking-tight tabular-nums">
+                    {homeMetrics.totalWorkoutsCount}
+                  </span>
+                  <span className="text-xs text-zinc-400 ml-1">Total</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
           {/* Top Motivation & Focus Banner */}
           <div className="relative overflow-hidden rounded-2xl bg-zinc-950 border border-zinc-800 p-4 shadow-md flex items-center justify-between">
             <div className="flex items-center gap-3">
@@ -2202,61 +2260,6 @@ export default function WorkoutPage() {
               </div>
             </div>
           )}
-
-          {/* Quick Stats Weekly Snapshot */}
-          <div className="flex flex-col gap-2">
-            <div className="flex items-center justify-between px-1">
-              <span className="text-xs font-bold uppercase tracking-wider text-zinc-400">
-                Weekly Snapshot
-              </span>
-              <span className="text-xs font-bold text-white flex items-center gap-1">
-                Active Cycle
-              </span>
-            </div>
-            <div className="grid grid-cols-3 gap-2.5">
-              {/* Streak */}
-              <div className="rounded-2xl bg-zinc-950 border border-zinc-800 p-3.5 flex flex-col justify-between shadow-sm">
-                <div className="flex items-center justify-between">
-                  <span className="text-[11px] font-semibold text-zinc-400">Streak</span>
-                  <span className="text-sm leading-none">🔥</span>
-                </div>
-                <div className="mt-2">
-                  <span className="text-xl font-black text-white tracking-tight tabular-nums">
-                    {homeMetrics.streakDays}
-                  </span>
-                  <span className="text-xs text-zinc-400 ml-1">Days</span>
-                </div>
-              </div>
-
-              {/* Weekly Volume */}
-              <div className="rounded-2xl bg-zinc-950 border border-zinc-800 p-3.5 flex flex-col justify-between shadow-sm">
-                <div className="flex items-center justify-between">
-                  <span className="text-[11px] font-semibold text-zinc-400">Volume</span>
-                  <Dumbbell className="h-4 w-4 text-zinc-400" />
-                </div>
-                <div className="mt-2">
-                  <span className="text-xl font-black text-white tracking-tight tabular-nums">
-                    {homeMetrics.weeklyVolumeFormatted}
-                  </span>
-                  <span className="text-xs text-zinc-400 ml-1">{preferredUnit}</span>
-                </div>
-              </div>
-
-              {/* Total Workouts */}
-              <div className="rounded-2xl bg-zinc-950 border border-zinc-800 p-3.5 flex flex-col justify-between shadow-sm">
-                <div className="flex items-center justify-between">
-                  <span className="text-[11px] font-semibold text-zinc-400">Logged</span>
-                  <Trophy className="h-4 w-4 text-zinc-400" />
-                </div>
-                <div className="mt-2">
-                  <span className="text-xl font-black text-white tracking-tight tabular-nums">
-                    {homeMetrics.totalWorkoutsCount}
-                  </span>
-                  <span className="text-xs text-zinc-400 ml-1">Total</span>
-                </div>
-              </div>
-            </div>
-          </div>
 
           {/* Gym Audio Intelligence Feature */}
           <GymAudioIntelligence />

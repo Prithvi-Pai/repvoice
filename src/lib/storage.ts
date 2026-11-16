@@ -3,6 +3,7 @@ import { getSupabaseClient } from './supabase/client';
 import { evaluateWorkoutPRs, getPersonalRecords, savePersonalRecords } from './records/personalRecordEngine';
 import { calculateEstimatedCalories } from './analytics/metricsEngine';
 import { getLocalDateKey, getTodayAndYesterdayKeys } from './history/dateGrouping';
+import { calculateSetVolume } from './utils/unitConversion';
 
 const LOCAL_STORAGE_ACTIVE_WORKOUT = 'repvoice_active_workout';
 const LOCAL_STORAGE_HISTORY = 'repvoice_history';
@@ -337,6 +338,8 @@ export async function saveFinishedWorkout(workout: Workout): Promise<SaveWorkout
   const workoutId = isValidUUID(workout.id) ? workout.id : generateUUID();
 
   // Compute session telemetry
+  const profile = getStoredProfile();
+  const preferredUnit = profile.preferredUnit || 'kg';
   let totalVolume = 0;
   let totalSets = 0;
   let voiceSetsCount = 0;
@@ -345,7 +348,7 @@ export async function saveFinishedWorkout(workout: Workout): Promise<SaveWorkout
     for (const s of ex.sets) {
       if (s.isCompleted) {
         totalSets++;
-        totalVolume += (s.weight || 0) * (s.reps || 0);
+        totalVolume += calculateSetVolume(s.weight, s.reps, s.unit, preferredUnit);
         if (s.isVoiceLogged !== false) voiceSetsCount++;
       }
     }
@@ -493,6 +496,8 @@ export function saveWorkoutLocally(workout: Workout): SaveWorkoutResult {
   const workoutId = isValidUUID(workout.id) ? workout.id : generateUUID();
 
   // Compute session telemetry if missing
+  const profile = getStoredProfile();
+  const preferredUnit = profile.preferredUnit || 'kg';
   let totalVolume = 0;
   let totalSets = 0;
   let voiceSetsCount = 0;
@@ -501,7 +506,7 @@ export function saveWorkoutLocally(workout: Workout): SaveWorkoutResult {
     for (const s of ex.sets) {
       if (s.isCompleted) {
         totalSets++;
-        totalVolume += (s.weight || 0) * (s.reps || 0);
+        totalVolume += calculateSetVolume(s.weight, s.reps, s.unit, preferredUnit);
         if (s.isVoiceLogged !== false) voiceSetsCount++;
       }
     }
@@ -611,13 +616,15 @@ export async function updateWorkoutTitle(workoutId: string, newTitle: string): P
  */
 export async function updateWorkoutInHistory(updatedWorkout: Workout): Promise<SaveWorkoutResult> {
   // Recalculate metrics
+  const profile = getStoredProfile();
+  const preferredUnit = profile.preferredUnit || 'kg';
   let totalVolume = 0;
   let totalSets = 0;
   for (const ex of updatedWorkout.exercises) {
     for (const s of ex.sets) {
       if (s.isCompleted !== false) {
         totalSets++;
-        totalVolume += (Number(s.weight) || 0) * (Number(s.reps) || 0);
+        totalVolume += calculateSetVolume(s.weight, s.reps, s.unit, preferredUnit);
       }
     }
   }

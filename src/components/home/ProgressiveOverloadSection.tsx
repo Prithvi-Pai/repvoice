@@ -1,13 +1,14 @@
 'use client';
 
 import { useState, useMemo } from 'react';
-import { Workout } from '@/types';
+import { Workout, WeightUnit } from '@/types';
 import { TrendingUp, Award, Zap, ChevronRight, Trophy, Sparkles } from 'lucide-react';
 import { formatDate } from '@/lib/utils/cn';
+import { convertWeight, calculateSetVolume } from '@/lib/utils/unitConversion';
 
 interface ProgressiveOverloadSectionProps {
   workoutHistory: Workout[];
-  preferredUnit?: string;
+  preferredUnit?: WeightUnit;
 }
 
 interface DataPoint {
@@ -69,9 +70,9 @@ export function ProgressiveOverloadSection({
 
         for (const s of matchEx.sets) {
           if (s.isCompleted !== false) {
-            const wVal = Number(s.weight) || 0;
+            const wVal = Math.round(convertWeight(s.weight, s.unit, preferredUnit) * 10) / 10;
             const rVal = Number(s.reps) || 0;
-            exVolume += wVal * rVal;
+            exVolume += calculateSetVolume(s.weight, s.reps, s.unit, preferredUnit);
 
             if (wVal > bestWeight || (wVal === bestWeight && rVal > bestReps)) {
               bestWeight = wVal;
@@ -170,7 +171,7 @@ export function ProgressiveOverloadSection({
       peakValue: peak,
       milestoneCount: prsCount,
     };
-  }, [workoutHistory, selectedExercise, metricMode]);
+  }, [workoutHistory, selectedExercise, metricMode, preferredUnit]);
 
   // SVG Chart Geometry
   const svgWidth = 500;

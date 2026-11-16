@@ -10,11 +10,13 @@ import {
 } from '@/lib/exercises/muscleGroupStore';
 import { AnatomicalHeatmap } from './AnatomicalHeatmap';
 import { AlertCircle, Activity, ChevronRight, Sparkles } from 'lucide-react';
+import { calculateSetVolume } from '@/lib/utils/unitConversion';
+import { WeightUnit } from '@/types';
 
 interface MuscleDistributionSectionProps {
   workoutHistory: Workout[];
   gender?: Gender;
-  preferredUnit?: string;
+  preferredUnit?: WeightUnit;
 }
 
 export function MuscleDistributionSection({
@@ -74,7 +76,7 @@ export function MuscleDistributionSection({
 
         for (const s of ex.sets) {
           if (s.isCompleted !== false) {
-            const vol = (Number(s.weight) || 0) * (Number(s.reps) || 0);
+            const vol = calculateSetVolume(s.weight, s.reps, s.unit, preferredUnit);
             stats[muscleGroup].sets += 1;
             stats[muscleGroup].volume += vol;
             totalCalculatedVolume += vol;
@@ -121,7 +123,7 @@ export function MuscleDistributionSection({
       neglectedMuscles: neglected,
       topMuscles: top,
     };
-  }, [workoutHistory, timeframe]);
+  }, [workoutHistory, timeframe, preferredUnit]);
 
   return (
     <div className="space-y-4">

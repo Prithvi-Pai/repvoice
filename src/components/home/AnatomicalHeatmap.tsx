@@ -67,29 +67,23 @@ export function AnatomicalHeatmap({
       <div className="w-full grid grid-cols-2 p-1 rounded-2xl bg-zinc-900 border border-zinc-800 text-xs font-extrabold">
         <button
           onClick={() => setView('front')}
-          className={`w-full py-2.5 rounded-xl transition cursor-pointer flex items-center justify-center gap-1.5 ${
+          className={`w-full py-2.5 rounded-xl transition cursor-pointer flex items-center justify-center ${
             view === 'front'
               ? 'bg-white text-black font-black shadow-md'
               : 'text-zinc-400 hover:text-white'
           }`}
         >
           <span>Front</span>
-          <span className={`text-[10px] font-semibold ${view === 'front' ? 'text-zinc-700' : 'text-zinc-500'}`}>
-            (Anterior)
-          </span>
         </button>
         <button
           onClick={() => setView('back')}
-          className={`w-full py-2.5 rounded-xl transition cursor-pointer flex items-center justify-center gap-1.5 ${
+          className={`w-full py-2.5 rounded-xl transition cursor-pointer flex items-center justify-center ${
             view === 'back'
               ? 'bg-white text-black font-black shadow-md'
               : 'text-zinc-400 hover:text-white'
           }`}
         >
           <span>Back</span>
-          <span className={`text-[10px] font-semibold ${view === 'back' ? 'text-zinc-700' : 'text-zinc-500'}`}>
-            (Posterior)
-          </span>
         </button>
       </div>
 

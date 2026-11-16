@@ -4,8 +4,9 @@
  * voice-sync accuracy percentages, and metabolic calorie burn estimations.
  */
 
-import { Workout, UserProfile, HomeDashboardMetrics, WorkoutReviewMetrics, PersonalRecord } from '@/types';
+import { Workout, UserProfile, HomeDashboardMetrics, WorkoutReviewMetrics, PersonalRecord, WeightUnit } from '@/types';
 import { getLocalDateKey } from '../history/dateGrouping';
+import { calculateSetVolume } from '../utils/unitConversion';
 
 /**
  * Calculates Home Screen Weekly Snapshot metrics & Recent Activity snippet (Screen 1).
@@ -14,7 +15,7 @@ export function calculateHomeDashboardMetrics(
   history: Workout[],
   userProfile?: UserProfile
 ): HomeDashboardMetrics {
-  const preferredUnit = userProfile?.preferredUnit || 'lbs';
+  const preferredUnit: WeightUnit = userProfile?.preferredUnit || 'kg';
   const totalWorkoutsCount = history.length;
 
   if (!history || history.length === 0) {
@@ -82,7 +83,7 @@ export function calculateHomeDashboardMetrics(
       for (const ex of w.exercises) {
         for (const s of ex.sets) {
           if (s.isCompleted) {
-            weeklyVolume += (s.weight || 0) * (s.reps || 0);
+            weeklyVolume += calculateSetVolume(s.weight, s.reps, s.unit, preferredUnit);
           }
         }
       }
@@ -107,7 +108,7 @@ export function calculateHomeDashboardMetrics(
       for (const s of ex.sets) {
         if (s.isCompleted) {
           latestSetsCount++;
-          latestVolume += (s.weight || 0) * (s.reps || 0);
+          latestVolume += calculateSetVolume(s.weight, s.reps, s.unit, preferredUnit);
           if (s.isVoiceLogged !== false) {
             latestVoiceSets++;
           }
@@ -157,7 +158,8 @@ export interface MonthlyRollup {
  */
 export function calculateMonthlyRollup(
   history: Workout[],
-  targetDate: Date = new Date()
+  targetDate: Date = new Date(),
+  preferredUnit: WeightUnit = 'kg'
 ): MonthlyRollup {
   const year = targetDate.getFullYear();
   const month = targetDate.getMonth();
@@ -182,7 +184,7 @@ export function calculateMonthlyRollup(
     for (const ex of w.exercises) {
       for (const s of ex.sets) {
         if (s.isCompleted) {
-          totalVolume += (s.weight || 0) * (s.reps || 0);
+          totalVolume += calculateSetVolume(s.weight, s.reps, s.unit, preferredUnit);
         }
       }
     }
@@ -208,7 +210,8 @@ export function calculateMonthlyRollup(
  */
 export function calculateWorkoutReviewMetrics(
   workout: Workout,
-  allPRs: PersonalRecord[] = []
+  allPRs: PersonalRecord[] = [],
+  preferredUnit: WeightUnit = 'kg'
 ): WorkoutReviewMetrics {
   const startMs = new Date(workout.startedAt).getTime();
   const endMs = workout.completedAt ? new Date(workout.completedAt).getTime() : Date.now();
@@ -226,7 +229,7 @@ export function calculateWorkoutReviewMetrics(
     for (const s of ex.sets) {
       if (s.isCompleted) {
         totalSets++;
-        totalVolume += (s.weight || 0) * (s.reps || 0);
+        totalVolume += calculateSetVolume(s.weight, s.reps, s.unit, preferredUnit);
         if (s.isVoiceLogged !== false) {
           voiceSetsCount++;
         }

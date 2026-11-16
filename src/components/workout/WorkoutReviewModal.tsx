@@ -27,6 +27,7 @@ import {
 } from '@/lib/records/personalRecordEngine';
 import { formatDuration } from '@/lib/utils/cn';
 import { generateDefaultWorkoutName, isGenericWorkoutTitle } from '@/lib/history/dateGrouping';
+import { calculateSetVolume } from '@/lib/utils/unitConversion';
 
 interface WorkoutReviewModalProps {
   isOpen: boolean;
@@ -118,7 +119,7 @@ export function WorkoutReviewModal({
   const totalVolume = workout.exercises.reduce(
     (acc, ex) =>
       acc +
-      ex.sets.reduce((sAcc, s) => sAcc + (s.isCompleted ? (s.weight || 0) * (s.reps || 0) : 0), 0),
+      ex.sets.reduce((sAcc, s) => sAcc + (s.isCompleted ? calculateSetVolume(s.weight, s.reps, s.unit, preferredUnit) : 0), 0),
     0
   );
 

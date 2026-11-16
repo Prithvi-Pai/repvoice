@@ -22,6 +22,7 @@ import {
   FileSpreadsheet,
   FileCode,
   Sparkles,
+  Calculator,
 } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { UserProfile, WeightUnit, Gender } from '@/types';
@@ -403,6 +404,30 @@ export function AdminDrawer({ isOpen, onClose }: AdminDrawerProps) {
               <CreditCard className="h-3.5 w-3.5 text-zinc-400" />
               <span>Manage Billing & Tier</span>
             </button>
+          </div>
+
+          {/* Section 6: Formulas & Calculations Reference */}
+          <div className="p-3.5 rounded-2xl bg-black border border-zinc-850 space-y-2">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Calculator className="h-4 w-4 text-zinc-300" />
+                <span className="text-xs font-bold text-white">Formulas & Metrics</span>
+              </div>
+              <span className="text-[10px] text-zinc-400">11 Models</span>
+            </div>
+
+            <p className="text-[11px] text-zinc-400">
+              Review mathematical equations for Volume, 1RM Brzycki, Overload Δ%, Calorie burn, Noise dB, and Voice SNR.
+            </p>
+
+            <Link
+              href="/settings/formulas"
+              onClick={onClose}
+              className="w-full py-2 px-3 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-xs font-bold text-white flex items-center justify-between transition group cursor-pointer"
+            >
+              <span>Explore Metric Formulas</span>
+              <ChevronRight className="h-3.5 w-3.5 text-zinc-400 group-hover:text-white transition" />
+            </Link>
           </div>
         </div>
 

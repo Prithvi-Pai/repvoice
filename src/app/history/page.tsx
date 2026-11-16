@@ -31,11 +31,14 @@ import {
   saveActiveWorkout,
   getActiveWorkout,
   resumeWorkoutFromHistory,
+  getStoredProfile,
 } from '@/lib/storage';
 import { toTitleCase, saveLearnedAlias } from '@/lib/exercises/exerciseStore';
 import { getWorkoutMuscleGroupsSummary } from '@/lib/exercises/muscleGroupStore';
 import { BottomNav } from '@/components/layout/BottomNav';
 import { formatDate, formatDuration } from '@/lib/utils/cn';
+import { calculateSetVolume } from '@/lib/utils/unitConversion';
+import { WeightUnit } from '@/types';
 import {
   groupWorkoutsByDate,
   filterWorkoutsBySpecificDate,
@@ -59,6 +62,23 @@ export default function HistoryPage() {
   const [editingWorkoutId, setEditingWorkoutId] = useState<string | null>(null);
   const [editingTitle, setEditingTitle] = useState<string>('');
   const [isSavingTitle, setIsSavingTitle] = useState<boolean>(false);
+  const [preferredUnit, setPreferredUnit] = useState<WeightUnit>('kg');
+
+  useEffect(() => {
+    const profile = getStoredProfile();
+    if (profile.preferredUnit) setPreferredUnit(profile.preferredUnit);
+
+    const handleSync = () => {
+      const p = getStoredProfile();
+      if (p.preferredUnit) setPreferredUnit(p.preferredUnit);
+    };
+    window.addEventListener('focus', handleSync);
+    window.addEventListener('storage', handleSync);
+    return () => {
+      window.removeEventListener('focus', handleSync);
+      window.removeEventListener('storage', handleSync);
+    };
+  }, []);
 
   const handleStartEditTitle = (e: React.MouseEvent, workout: Workout) => {
     e.stopPropagation();
@@ -327,7 +347,7 @@ export default function HistoryPage() {
     await updateWorkoutInHistory(updatedWorkout);
   };
 
-  const rollup = calculateMonthlyRollup(workouts);
+  const rollup = calculateMonthlyRollup(workouts, new Date(), preferredUnit);
 
   const fetchHistory = async () => {
     setIsLoading(true);
@@ -441,7 +461,7 @@ export default function HistoryPage() {
       return (
         acc +
         ex.sets.reduce((sAcc, s) => {
-          return sAcc + s.weight * s.reps;
+          return sAcc + calculateSetVolume(s.weight, s.reps, s.unit, preferredUnit);
         }, 0)
       );
     }, 0);
@@ -616,7 +636,7 @@ export default function HistoryPage() {
             <span>•</span>
             <span className="flex items-center gap-1">
               <Flame className="h-3.5 w-3.5 text-zinc-400" />
-              {volume.toLocaleString()} kg
+              {Math.round(volume).toLocaleString()} {preferredUnit}
             </span>
             <span>•</span>
             <span>{workout.exercises.length} exercises</span>

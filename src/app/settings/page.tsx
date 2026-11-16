@@ -28,6 +28,8 @@ import {
   Crown,
   FileSpreadsheet,
   FileCode,
+  Calculator,
+  ChevronRight,
 } from 'lucide-react';
 import { getSupabaseConfig, getSupabaseClient } from '@/lib/supabase/client';
 import { getStoredProfile, saveStoredProfile, getWorkoutHistory } from '@/lib/storage';
@@ -566,6 +568,34 @@ export default function SettingsPage() {
           <CreditCard className="h-3.5 w-3.5 text-zinc-400" />
           <span>Manage Subscription & Billing</span>
         </button>
+      </div>
+
+      {/* Calculation Formulas & Metrics Engine Section */}
+      <div id="formulas" className="p-4 rounded-2xl bg-zinc-950 border border-zinc-800 space-y-3 shadow-lg">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2 text-white font-bold text-sm">
+            <Calculator className="h-4 w-4 text-zinc-300" />
+            <span>Formulas & Calculations</span>
+          </div>
+          <span className="text-[10px] font-bold text-zinc-300 bg-zinc-800 px-2 py-0.5 rounded-full uppercase border border-zinc-700">
+            Reference
+          </span>
+        </div>
+
+        <p className="text-xs text-zinc-400 leading-relaxed">
+          Inspect the exact mathematical formulas, biomechanical equations, and physiological estimation models used across RepVoice (Volume, 1RM, Overload Δ%, Calorie burn, Noise dB, and SNR).
+        </p>
+
+        <Link
+          href="/settings/formulas"
+          className="w-full py-2.5 px-3 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-xs font-bold text-white flex items-center justify-between transition group shadow-sm"
+        >
+          <div className="flex items-center gap-2">
+            <Calculator className="h-3.5 w-3.5 text-zinc-400 group-hover:text-white transition" />
+            <span>View All Calculation Formulas</span>
+          </div>
+          <ChevronRight className="h-4 w-4 text-zinc-400 group-hover:text-white transition" />
+        </Link>
       </div>
 
       {/* Supabase Connection Test */}
