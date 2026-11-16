@@ -11,7 +11,7 @@ export type ContinuousSpeechStatus =
   | 'unsupported';
 
 interface UseContinuousWorkoutSpeechProps {
-  onFinalUtterance: (finalText: string) => void;
+  onFinalUtterance: (finalText: string, alternatives?: string[]) => void;
   onInterimUtterance?: (interimText: string) => void;
   lang?: string;
 }
@@ -68,7 +68,7 @@ export function useContinuousWorkoutSpeech({
     }
   }, []);
 
-  // Controlled restart function
+  // Controlled restart function with ultra-low latency for seamless continuous listening
   const attemptRestart = useCallback(() => {
     if (!isListeningDesiredRef.current) return;
     if (isStartingOrActiveRef.current) return;
@@ -77,7 +77,7 @@ export function useContinuousWorkoutSpeech({
       clearTimeout(restartTimerRef.current);
     }
 
-    // Delay restart slightly to let audio resources release cleanly
+    // Ultra-low latency restart delay (60ms) minimizes audio dead zones between pauses
     restartTimerRef.current = setTimeout(() => {
       if (!isListeningDesiredRef.current) return;
       if (!recognitionRef.current) return;
@@ -94,16 +94,16 @@ export function useContinuousWorkoutSpeech({
         } else {
           console.warn('Speech restart exception:', err);
           consecutiveErrorsRef.current += 1;
-          if (consecutiveErrorsRef.current > 5) {
+          if (consecutiveErrorsRef.current > 8) {
             setStatus('error');
-            setErrorMessage('Unable to maintain continuous microphone connection.');
+            setErrorMessage('Unable to maintain continuous microphone connection. Tap mic to restart.');
           } else {
-            // Retry with exponential backoff
-            restartTimerRef.current = setTimeout(attemptRestart, 600);
+            // Retry with short backoff
+            restartTimerRef.current = setTimeout(attemptRestart, 300);
           }
         }
       }
-    }, 250);
+    }, 60);
   }, []);
 
   // Initialize SpeechRecognition once
@@ -123,7 +123,7 @@ export function useContinuousWorkoutSpeech({
     recognition.continuous = true;
     recognition.interimResults = true;
     recognition.lang = lang;
-    recognition.maxAlternatives = 1;
+    recognition.maxAlternatives = 5;
 
     recognition.onstart = () => {
       isStartingOrActiveRef.current = true;
@@ -133,6 +133,7 @@ export function useContinuousWorkoutSpeech({
     };
 
     recognition.onresult = (event: any) => {
+      consecutiveErrorsRef.current = 0;
       let interim = '';
 
       // Process only from resultIndex forward to avoid duplicate re-processing
@@ -141,6 +142,15 @@ export function useContinuousWorkoutSpeech({
         const transcriptText = result[0]?.transcript?.trim() || '';
 
         if (!transcriptText) continue;
+
+        // Collect all multi-hypothesis alternatives returned by the speech engine
+        const alternatives: string[] = [];
+        for (let a = 0; a < result.length; ++a) {
+          const altText = result[a]?.transcript?.trim();
+          if (altText && !alternatives.includes(altText)) {
+            alternatives.push(altText);
+          }
+        }
 
         if (result.isFinal) {
           // Deduplication key based on utterance text and approximate timestamp
@@ -159,9 +169,9 @@ export function useContinuousWorkoutSpeech({
             setInterimTranscript('');
             setStatus('processing');
 
-            // Dispatch finalized utterance
+            // Dispatch finalized utterance with multi-alternative hypotheses
             try {
-              onFinalUtteranceRef.current(transcriptText);
+              onFinalUtteranceRef.current(transcriptText, alternatives);
             } catch (dispatchErr) {
               console.error('Error dispatching final utterance:', dispatchErr);
             }
@@ -196,23 +206,28 @@ export function useContinuousWorkoutSpeech({
         setErrorMessage('Microphone access was denied. Please allow microphone permissions in your browser URL bar.');
       } else if (event.error === 'no-speech') {
         // Natural silence in the gym: do not stop continuous listening
+        // Reset error count because the microphone connection itself is healthy
+        consecutiveErrorsRef.current = 0;
       } else if (event.error === 'aborted') {
         isStartingOrActiveRef.current = false;
       } else if (event.error === 'audio-capture') {
         isStartingOrActiveRef.current = false;
         consecutiveErrorsRef.current += 1;
-        if (consecutiveErrorsRef.current > 4) {
+        if (consecutiveErrorsRef.current > 8) {
           setStatus('error');
           setErrorMessage('Microphone capture error. Please ensure no other application is using your microphone.');
         } else {
           // Retry after a short backoff
-          restartTimerRef.current = setTimeout(attemptRestart, 500);
+          restartTimerRef.current = setTimeout(attemptRestart, 400);
         }
       } else {
+        isStartingOrActiveRef.current = false;
         consecutiveErrorsRef.current += 1;
-        if (consecutiveErrorsRef.current > 4) {
+        if (consecutiveErrorsRef.current > 8) {
           setStatus('error');
           setErrorMessage(`Microphone error: ${event.error}`);
+        } else {
+          restartTimerRef.current = setTimeout(attemptRestart, 400);
         }
       }
     };
@@ -230,7 +245,7 @@ export function useContinuousWorkoutSpeech({
           setLastFinalTranscript(pendingInterim);
           setInterimTranscript('');
           try {
-            onFinalUtteranceRef.current(pendingInterim);
+            onFinalUtteranceRef.current(pendingInterim, [pendingInterim]);
           } catch (dispatchErr) {
             console.error('Error dispatching pending utterance on speech end:', dispatchErr);
           }

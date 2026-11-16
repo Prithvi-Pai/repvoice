@@ -38,9 +38,18 @@ export function VoiceLoggerModal({
     stopListening,
     reset,
   } = useSpeechRecognition({
-    onResult: (finalText) => {
+    onResult: (finalText, alternatives) => {
       if (finalText.trim()) {
-        const parsed = parseVoiceInput(finalText, contextExercise, lastWeight, preferredUnit);
+        let parsed = parseVoiceInput(finalText, contextExercise, lastWeight, preferredUnit);
+        if ((!parsed.exercise || !parsed.sets.length) && alternatives && alternatives.length > 1) {
+          for (const alt of alternatives) {
+            const altParsed = parseVoiceInput(alt, contextExercise, lastWeight, preferredUnit);
+            if (altParsed.exercise && altParsed.sets.length) {
+              parsed = altParsed;
+              break;
+            }
+          }
+        }
         setParsedResult(parsed);
       }
     },

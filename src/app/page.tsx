@@ -952,7 +952,7 @@ export default function WorkoutPage() {
 
   // Continuous Voice Command Dispatcher
   const handleVoiceCommand = useCallback(
-    (finalTranscript: string) => {
+    (finalTranscript: string, alternatives: string[] = []) => {
       const now = Date.now();
       const cleanTranscript = finalTranscript.trim().toLowerCase();
 
@@ -977,7 +977,7 @@ export default function WorkoutPage() {
       const { exercise: currentEx, lastWeight } = getActiveExerciseContext();
 
       // Parse structured command with dynamic aliases and pending confirmation context
-      const command = parseWorkoutCommand(
+      let command = parseWorkoutCommand(
         finalTranscript,
         currentEx?.exerciseName,
         lastWeight,
@@ -985,6 +985,51 @@ export default function WorkoutPage() {
         customAliases,
         pendingConfirmation
       );
+      let effectiveTranscript = finalTranscript;
+
+      // Multi-Alternative Fallback Recovery:
+      // If primary recognition is ambiguous or triggers an unknown confirmation,
+      // inspect secondary alternatives for a confident action match!
+      if (
+        (command.type === 'AMBIGUOUS' || command.type === 'CONFIRM_EXERCISE') &&
+        alternatives &&
+        alternatives.length > 1
+      ) {
+        for (let altIdx = 0; altIdx < alternatives.length; altIdx++) {
+          const altText = alternatives[altIdx];
+          if (!altText || altText.toLowerCase().trim() === cleanTranscript) continue;
+
+          const altCommand = parseWorkoutCommand(
+            altText,
+            currentEx?.exerciseName,
+            lastWeight,
+            preferredUnit,
+            customAliases,
+            pendingConfirmation
+          );
+
+          const isDefiniteAction =
+            altCommand.type === 'ADD_SET' ||
+            altCommand.type === 'ADD_SET_CURRENT' ||
+            altCommand.type === 'SELECT_EXERCISE' ||
+            altCommand.type === 'START_REST' ||
+            altCommand.type === 'SET_DONE' ||
+            altCommand.type === 'START_SET' ||
+            altCommand.type === 'FINISH_WORKOUT' ||
+            altCommand.type === 'UNDO_LAST' ||
+            altCommand.type === 'RESOLVE_CONFIRMATION';
+
+          if (isDefiniteAction) {
+            console.info(
+              `[Voice Engine] Recovered command via Speech Alternative #${altIdx + 1}: "${altText}" ->`,
+              altCommand.type
+            );
+            command = altCommand;
+            effectiveTranscript = altText;
+            break;
+          }
+        }
+      }
 
       console.log('Voice Command Received:', command);
 
@@ -1076,7 +1121,8 @@ export default function WorkoutPage() {
         const newW = handleStartWorkout(title);
         currentWorkout = newW;
         if (!isListeningDesired) {
-          prewarmGymNoiseReduction().catch(() => {});
+          const prof = getStoredProfile();
+          prewarmGymNoiseReduction(prof.microphoneSensitivity || 'aggressive').catch(() => {});
           startContinuousListening();
         }
         setSaveStatus({
@@ -1617,7 +1663,8 @@ export default function WorkoutPage() {
       if (!activeWorkout) {
         handleStartWorkout('Voice Workout');
       }
-      prewarmGymNoiseReduction().catch(() => {});
+      const prof = getStoredProfile();
+      prewarmGymNoiseReduction(prof.microphoneSensitivity || 'aggressive').catch(() => {});
       startContinuousListening();
       setSaveStatus({ type: 'info', message: 'Continuous listening active. Speak anytime.' });
     }

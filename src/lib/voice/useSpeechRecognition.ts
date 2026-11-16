@@ -16,7 +16,7 @@ export type SpeechStatus =
   | 'error';
 
 interface UseSpeechRecognitionProps {
-  onResult?: (transcript: string) => void;
+  onResult?: (transcript: string, alternatives?: string[]) => void;
   onInterimResult?: (transcript: string) => void;
   lang?: string;
 }
@@ -63,7 +63,7 @@ export function useSpeechRecognition({
     recognition.continuous = true; // Stay active across brief pauses
     recognition.interimResults = true;
     recognition.lang = lang;
-    recognition.maxAlternatives = 1;
+    recognition.maxAlternatives = 5;
 
     recognition.onstart = () => {
       isListeningRef.current = true;
@@ -74,13 +74,20 @@ export function useSpeechRecognition({
     recognition.onresult = (event: any) => {
       let finalString = '';
       let interimString = '';
+      const alternatives: string[] = [];
 
       for (let i = 0; i < event.results.length; ++i) {
         const item = event.results[i];
         if (item.isFinal) {
-          finalString += item[0].transcript + ' ';
+          finalString += (item[0]?.transcript || '') + ' ';
+          for (let a = 0; a < item.length; ++a) {
+            const altText = item[a]?.transcript?.trim();
+            if (altText && !alternatives.includes(altText)) {
+              alternatives.push(altText);
+            }
+          }
         } else {
-          interimString += item[0].transcript;
+          interimString += item[0]?.transcript || '';
         }
       }
 
@@ -96,7 +103,7 @@ export function useSpeechRecognition({
           onInterimResultRef.current(combinedText);
         }
         if (finalString && onResultRef.current) {
-          onResultRef.current(finalString);
+          onResultRef.current(finalString, alternatives);
         }
       }
     };
