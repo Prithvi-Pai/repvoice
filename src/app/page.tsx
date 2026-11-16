@@ -101,6 +101,7 @@ import { WorkoutReviewModal } from '@/components/workout/WorkoutReviewModal';
 import { getPreviousPerformanceForExercise } from '@/lib/history/previousPerformance';
 import { calculateEstimatedCalories } from '@/lib/analytics/metricsEngine';
 import { calculateSetVolume } from '@/lib/utils/unitConversion';
+import { recordVoiceAttempt } from '@/lib/voice/voiceTelemetry';
 
 export default function WorkoutPage() {
   const [activeWorkout, setActiveWorkout] = useState<Workout | null>(null);
@@ -1187,11 +1188,21 @@ export default function WorkoutPage() {
       }
 
       if (command.type === 'UNDO_LAST') {
+        recordVoiceAttempt({
+          rawTranscript: finalTranscript,
+          outcome: 'correction_needed',
+          reason: 'User issued undo command',
+        });
         handleUndoLast();
         return;
       }
 
       if (command.type === 'MODIFY_LAST') {
+        recordVoiceAttempt({
+          rawTranscript: finalTranscript,
+          outcome: 'correction_needed',
+          reason: 'User issued modify command',
+        });
         handleModifyLast(command);
         return;
       }
@@ -1222,6 +1233,12 @@ export default function WorkoutPage() {
         });
 
         if (clarificationNeeded) {
+          recordVoiceAttempt({
+            rawTranscript: finalTranscript,
+            outcome: 'clarification_required',
+            exerciseName: clarificationNeeded.exerciseName || clarificationNeeded.suggestedExercise,
+            reason: clarificationNeeded.questionPrompt,
+          });
           setClarificationState(clarificationNeeded);
           playSoundChime();
           setSaveStatus({ type: 'info', message: clarificationNeeded.questionPrompt });
@@ -1304,6 +1321,11 @@ export default function WorkoutPage() {
         }
 
         case 'SELECT_EXERCISE': {
+          recordVoiceAttempt({
+            rawTranscript: finalTranscript,
+            outcome: 'clean_success',
+            exerciseName: command.exercise,
+          });
           // Switch or create exercise without inventing sets
           const existing = currentWorkout.exercises.find(
             (e) => e.exerciseName.toLowerCase() === command.exercise.toLowerCase()
@@ -1339,6 +1361,12 @@ export default function WorkoutPage() {
         }
 
         case 'ADD_SET': {
+          recordVoiceAttempt({
+            rawTranscript: finalTranscript,
+            outcome: 'clean_success',
+            exerciseName: command.exercise,
+          });
+
           if (command.weight === undefined || command.reps === undefined) {
             setSaveStatus({
               type: 'info',
@@ -1475,6 +1503,11 @@ export default function WorkoutPage() {
           }
 
           if (!targetEx) {
+            recordVoiceAttempt({
+              rawTranscript: command.rawTranscript,
+              outcome: 'ambiguous',
+              reason: 'No active exercise selected to attach this set to',
+            });
             // No current exercise to attach to
             setAmbiguousCommand({
               type: 'AMBIGUOUS',
@@ -1486,6 +1519,12 @@ export default function WorkoutPage() {
             });
             return;
           }
+
+          recordVoiceAttempt({
+            rawTranscript: finalTranscript,
+            outcome: 'clean_success',
+            exerciseName: targetEx.exerciseName,
+          });
 
           const previousWeight = targetEx.sets.length > 0 ? targetEx.sets[targetEx.sets.length - 1].weight : 40;
           const finalWeight = command.weight !== undefined ? command.weight : previousWeight;
@@ -1577,6 +1616,12 @@ export default function WorkoutPage() {
         }
 
         case 'CONFIRM_EXERCISE': {
+          recordVoiceAttempt({
+            rawTranscript: finalTranscript,
+            outcome: 'clarification_required',
+            exerciseName: command.suggestedExercise,
+            reason: `Did you say "${command.suggestedExercise}"?`,
+          });
           setPendingConfirmation(command);
           setShowManualCorrection(false);
           playSoundChime();
@@ -1613,6 +1658,11 @@ export default function WorkoutPage() {
         }
 
         case 'AMBIGUOUS': {
+          recordVoiceAttempt({
+            rawTranscript: finalTranscript,
+            outcome: 'ambiguous',
+            reason: command.reason,
+          });
           setAmbiguousCommand(command);
           break;
         }

@@ -240,6 +240,50 @@ export function stringSimilarity(str1, str2) {
   return 1.0 - dist / maxLen;
 }
 
+export const INVALID_EXERCISE_WORDS = new Set([
+  // Units & measurements
+  'kg', 'kgs', 'kilo', 'kilos', 'kilogram', 'kilograms',
+  'lb', 'lbs', 'pound', 'pounds',
+  'rep', 'reps', 'wrap', 'wraps', 'rip', 'rips', 'rap', 'raps', 'repetition', 'repetitions',
+  'sec', 'secs', 'second', 'seconds', 'min', 'mins', 'minute', 'minutes', 'hr', 'hrs', 'hour', 'hours',
+  'rpe', 'rir', 'percentage', 'percent',
+
+  // Set & workout structural terms
+  'set', 'sets', 'round', 'rounds', 'superset', 'supersets', 'dropset', 'dropsets',
+  'workout', 'exercise', 'exercises', 'routine', 'session', 'circuit', 'program',
+  'weight', 'weights', 'bodyweight',
+
+  // Conversational fillers, prepositions, numbers & verbs
+  'did', 'done', 'doing', 'do', 'completed', 'complete', 'got', 'hit', 'crushed',
+  'managed', 'pumped', 'banged', 'knocked', 'logged', 'log',
+  'same', 'next', 'previous', 'last', 'again', 'another', 'first', 'second', 'third',
+  'just', 'only', 'all', 'more', 'less', 'heavy', 'light', 'easy', 'hard',
+  'today', 'yesterday', 'now', 'ok', 'okay', 'yes', 'no', 'yeah', 'yup', 'nope',
+  'and', 'the', 'a', 'an', 'with', 'at', 'for', 'to', 'from', 'in', 'on', 'by', 'of',
+]);
+
+export function isValidExerciseCandidate(candidate) {
+  if (!candidate) return false;
+  const cleaned = candidate.trim().toLowerCase().replace(/[^\w\s-]/g, '');
+  if (cleaned.length < 3) return false;
+  if (/^\d+([.-]\d+)?$/.test(cleaned)) return false;
+
+  const tokens = cleaned.split(/\s+/).filter(Boolean);
+  if (tokens.length === 0) return false;
+
+  const nonTrivialTokens = tokens.filter(
+    (t) => !INVALID_EXERCISE_WORDS.has(t) && !/^\d+$/.test(t)
+  );
+
+  if (nonTrivialTokens.length === 0) return false;
+
+  if (tokens.length === 1 && INVALID_EXERCISE_WORDS.has(tokens[0])) {
+    return false;
+  }
+
+  return true;
+}
+
 export function normalizeSpokenNumbers(text) {
   const numberWords = {
     zero: 0, one: 1, two: 2, three: 3, four: 4, five: 5,
@@ -254,6 +298,26 @@ export function normalizeSpokenNumbers(text) {
     .replace(/kilo['’]?s\b/g, 'kilos')
     .replace(/rep['’]?s\b/g, 'reps')
     .replace(/lb['’]?s\b/g, 'lbs');
+
+  // Attached unit separation: "10kgs" -> "10 kg", "50lbs" -> "50 lbs", "10reps" -> "10 reps"
+  str = str
+    .replace(/(\d+(?:\.\d+)?)\s*(kgs?|kilos?|kilograms?)\b/gi, '$1 kg')
+    .replace(/(\d+(?:\.\d+)?)\s*(lbs?|pounds?)\b/gi, '$1 lbs')
+    .replace(/(\d+)\s*(reps?|wraps?|repetitions?)\b/gi, '$1 reps');
+
+  // Gerund verb stemming for gym exercises (e.g. "rowing" -> "row", "pressing" -> "press")
+  str = str
+    .replace(/\browing\b/gi, 'row')
+    .replace(/\bpressing\b/gi, 'press')
+    .replace(/\bcurling\b/gi, 'curl')
+    .replace(/\bsquatting\b/gi, 'squat')
+    .replace(/\bdeadlifting\b/gi, 'deadlift')
+    .replace(/\braising\b/gi, 'raise')
+    .replace(/\bpulling\b/gi, 'pull')
+    .replace(/\bflying\b/gi, 'fly')
+    .replace(/\bshrugging\b/gi, 'shrug')
+    .replace(/\blunging\b/gi, 'lunge')
+    .replace(/\bdipping\b/gi, 'dip');
 
   // Fractions & decimals spoken before word-to-digit conversion
   str = str
@@ -325,6 +389,12 @@ export function normalizeSpokenNumbers(text) {
 
   // Slang action verbs for reps:
   str = str.replace(/\b(?:got|hit|crushed|pumped\s+out|banged\s+out|knocked\s+out|managed)\s+(\d+)\b/gi, 'did $1 reps');
+
+  // Secondary attached unit separation post word-to-digit conversion
+  str = str
+    .replace(/(\d+(?:\.\d+)?)\s*(kgs?|kilos?|kilograms?)\b/gi, '$1 kg')
+    .replace(/(\d+(?:\.\d+)?)\s*(lbs?|pounds?)\b/gi, '$1 lbs')
+    .replace(/(\d+)\s*(reps?|wraps?|repetitions?)\b/gi, '$1 reps');
 
   return str;
 }
@@ -985,12 +1055,40 @@ console.log('=====================================================\n');
     '33. Multi-alternative fallback recovery: "then press" -> "bench press 80 kg 8 reps"', command);
 }
 
+// Test 34: Gerund verb stemming & attached units ("barbell rowing 10kgs 10 reps")
+{
+  const res = parseWorkoutCommand('barbell rowing 10kgs 10 reps');
+  assert(res.type === 'ADD_SET' && res.exercise === 'Barbell Row' && res.weight === 10 && res.unit === 'kg' && res.reps === 10,
+    '34. Gerund verb stemming & attached units: "barbell rowing 10kgs 10 reps" -> Barbell Row 10 kg 10 reps', res);
+}
+
+// Test 35: Attached unit without space ("50lbs for 8 reps dumbbell curls")
+{
+  const res = parseWorkoutCommand('50lbs for 8 reps dumbbell curls');
+  assert(res.type === 'ADD_SET' && res.exercise === 'Bicep Curls' && res.weight === 50 && res.unit === 'lbs' && res.reps === 8,
+    '35. Attached unit without space: "50lbs for 8 reps dumbbell curls"', res);
+}
+
+// Test 36: Unit token rejection: candidate validator rejects "kgs" and "lbs" as exercise names
+{
+  assert(isValidExerciseCandidate('kgs') === false && isValidExerciseCandidate('kg') === false && isValidExerciseCandidate('reps') === false,
+    '36. Unit token rejection: candidate validator rejects "kgs", "kg", "reps" as exercise candidates', null);
+}
+
+// Test 37: Plausible novel exercise candidate accepted
+{
+  assert(isValidExerciseCandidate('hip thrust') === true && isValidExerciseCandidate('bulgarian split squat') === true,
+    '37. Plausible novel exercise candidate accepted', null);
+}
+
 console.log('\n-----------------------------------------------------');
 console.log(`TEST SUMMARY: ${passed} PASSED, ${failed} FAILED`);
 console.log('-----------------------------------------------------');
 
-if (failed > 0) {
-  process.exit(1);
-} else {
-  process.exit(0);
+if (process.argv[1] && process.argv[1].endsWith('test-command-parser.mjs')) {
+  if (failed > 0) {
+    process.exit(1);
+  } else {
+    process.exit(0);
+  }
 }

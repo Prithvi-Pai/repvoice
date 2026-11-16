@@ -1,4 +1,5 @@
 import { ParsedVoiceEntry, ParsedSet, WeightUnit } from '../../types';
+import { isValidExerciseCandidate } from './workoutCommandParser';
 
 // Common exercises for fuzzy matching and normalization (sorted longest to shortest)
 export const COMMON_EXERCISES = [
@@ -127,6 +128,26 @@ export function normalizeSpokenNumbers(text: string): string {
     lower = lower.replace(reg, String(val));
   }
 
+  // Attached unit separation: "10kgs" -> "10 kg", "50lbs" -> "50 lbs", "10reps" -> "10 reps"
+  lower = lower
+    .replace(/(\d+(?:\.\d+)?)\s*(kgs?|kilos?|kilograms?)\b/gi, '$1 kg')
+    .replace(/(\d+(?:\.\d+)?)\s*(lbs?|pounds?)\b/gi, '$1 lbs')
+    .replace(/(\d+)\s*(reps?|wraps?|repetitions?)\b/gi, '$1 reps');
+
+  // Gerund verb stemming for common gym exercises
+  lower = lower
+    .replace(/\browing\b/gi, 'row')
+    .replace(/\bpressing\b/gi, 'press')
+    .replace(/\bcurling\b/gi, 'curl')
+    .replace(/\bsquatting\b/gi, 'squat')
+    .replace(/\bdeadlifting\b/gi, 'deadlift')
+    .replace(/\braising\b/gi, 'raise')
+    .replace(/\bpulling\b/gi, 'pull')
+    .replace(/\bflying\b/gi, 'fly')
+    .replace(/\bshrugging\b/gi, 'shrug')
+    .replace(/\blunging\b/gi, 'lunge')
+    .replace(/\bdipping\b/gi, 'dip');
+
   return lower;
 }
 
@@ -189,8 +210,7 @@ export function parseVoiceInput(
     const matchBeforeNumber = cleaned.match(/^([a-zA-Z\s]+?)(?=\b\d|\bsame\b|\bbodyweight\b)/i);
     if (matchBeforeNumber && matchBeforeNumber[1].trim().length > 2) {
       const candidate = matchBeforeNumber[1].trim();
-      // Avoid words like "did", "set", "reps", "completed" as exercise names
-      if (!/^(?:did|done|set|sets|reps|completed|workout|just)$/i.test(candidate)) {
+      if (isValidExerciseCandidate(candidate)) {
         exerciseName = candidate.charAt(0).toUpperCase() + candidate.slice(1);
         cleaned = cleaned.slice(matchBeforeNumber[0].length);
       }

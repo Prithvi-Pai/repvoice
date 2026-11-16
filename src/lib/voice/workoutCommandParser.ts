@@ -354,6 +354,63 @@ const ORDINAL_MAP: Record<string, number> = {
 };
 
 /**
+ * Blacklist of units, fillers, numbers, and structural terms that can NEVER
+ * be treated as valid exercise candidate names.
+ */
+export const INVALID_EXERCISE_WORDS = new Set([
+  // Units & measurements
+  'kg', 'kgs', 'kilo', 'kilos', 'kilogram', 'kilograms',
+  'lb', 'lbs', 'pound', 'pounds',
+  'rep', 'reps', 'wrap', 'wraps', 'rip', 'rips', 'rap', 'raps', 'repetition', 'repetitions',
+  'sec', 'secs', 'second', 'seconds', 'min', 'mins', 'minute', 'minutes', 'hr', 'hrs', 'hour', 'hours',
+  'rpe', 'rir', 'percentage', 'percent',
+
+  // Set & workout structural terms
+  'set', 'sets', 'round', 'rounds', 'superset', 'supersets', 'dropset', 'dropsets',
+  'workout', 'exercise', 'exercises', 'routine', 'session', 'circuit', 'program',
+  'weight', 'weights', 'bodyweight',
+
+  // Conversational fillers, prepositions, numbers & verbs
+  'did', 'done', 'doing', 'do', 'completed', 'complete', 'got', 'hit', 'crushed',
+  'managed', 'pumped', 'banged', 'knocked', 'logged', 'log',
+  'same', 'next', 'previous', 'last', 'again', 'another', 'first', 'second', 'third',
+  'just', 'only', 'all', 'more', 'less', 'heavy', 'light', 'easy', 'hard',
+  'today', 'yesterday', 'now', 'ok', 'okay', 'yes', 'no', 'yeah', 'yup', 'nope',
+  'and', 'the', 'a', 'an', 'with', 'at', 'for', 'to', 'from', 'in', 'on', 'by', 'of',
+]);
+
+/**
+ * Validates whether a spoken candidate phrase is a plausible exercise name.
+ * Prevents unit tokens like "kgs", "lbs", or stray numbers from ever being
+ * classified or registered as exercise names.
+ */
+export function isValidExerciseCandidate(candidate?: string): boolean {
+  if (!candidate) return false;
+  const cleaned = candidate.trim().toLowerCase().replace(/[^\w\s-]/g, '');
+  if (cleaned.length < 3) return false;
+  // Reject pure numbers
+  if (/^\d+([.-]\d+)?$/.test(cleaned)) return false;
+
+  const tokens = cleaned.split(/\s+/).filter(Boolean);
+  if (tokens.length === 0) return false;
+
+  // Filter out invalid words and pure digits
+  const nonTrivialTokens = tokens.filter(
+    (t) => !INVALID_EXERCISE_WORDS.has(t) && !/^\d+$/.test(t)
+  );
+
+  // If every token was blacklisted or a number, reject
+  if (nonTrivialTokens.length === 0) return false;
+
+  // Single token must have at least 3 chars and cannot be in blacklist
+  if (tokens.length === 1 && INVALID_EXERCISE_WORDS.has(tokens[0])) {
+    return false;
+  }
+
+  return true;
+}
+
+/**
  * Normalizes numbers spoken as words to numeric digits.
  * Extensively handles lifter slang, compound fractions ("two and a half"),
  * phonetic mishearings ("keys" -> "kilos", "wraps" -> "reps"), and dumbbell pairs ("30s").
@@ -372,6 +429,27 @@ export function normalizeSpokenNumbers(text: string): string {
     .replace(/kilo['’]?s\b/g, 'kilos')
     .replace(/rep['’]?s\b/g, 'reps')
     .replace(/lb['’]?s\b/g, 'lbs');
+
+  // Attached unit separation: "10kgs" -> "10 kg", "50lbs" -> "50 lbs", "10reps" -> "10 reps"
+  // Run this early so tokens like "10kgs" or "100lbs" cleanly tokenize digits and units
+  str = str
+    .replace(/(\d+(?:\.\d+)?)\s*(kgs?|kilos?|kilograms?)\b/gi, '$1 kg')
+    .replace(/(\d+(?:\.\d+)?)\s*(lbs?|pounds?)\b/gi, '$1 lbs')
+    .replace(/(\d+)\s*(reps?|wraps?|repetitions?)\b/gi, '$1 reps');
+
+  // Gerund verb stemming for gym exercises (e.g. "rowing" -> "row", "pressing" -> "press", "curling" -> "curl")
+  str = str
+    .replace(/\browing\b/gi, 'row')
+    .replace(/\bpressing\b/gi, 'press')
+    .replace(/\bcurling\b/gi, 'curl')
+    .replace(/\bsquatting\b/gi, 'squat')
+    .replace(/\bdeadlifting\b/gi, 'deadlift')
+    .replace(/\braising\b/gi, 'raise')
+    .replace(/\bpulling\b/gi, 'pull')
+    .replace(/\bflying\b/gi, 'fly')
+    .replace(/\bshrugging\b/gi, 'shrug')
+    .replace(/\blunging\b/gi, 'lunge')
+    .replace(/\bdipping\b/gi, 'dip');
 
   // Fractions & decimals spoken before word-to-digit conversion
   str = str
@@ -449,6 +527,12 @@ export function normalizeSpokenNumbers(text: string): string {
   // Slang action verbs for reps:
   // "got 10", "hit 10", "crushed 10", "pumped out 10", "banged out 10", "knocked out 10", "managed 8"
   str = str.replace(/\b(?:got|hit|crushed|pumped\s+out|banged\s+out|knocked\s+out|managed)\s+(\d+)\b/gi, 'did $1 reps');
+
+  // Secondary attached unit separation post word-to-digit conversion
+  str = str
+    .replace(/(\d+(?:\.\d+)?)\s*(kgs?|kilos?|kilograms?)\b/gi, '$1 kg')
+    .replace(/(\d+(?:\.\d+)?)\s*(lbs?|pounds?)\b/gi, '$1 lbs')
+    .replace(/(\d+)\s*(reps?|wraps?|repetitions?)\b/gi, '$1 reps');
 
   return str;
 }
@@ -775,7 +859,7 @@ export function parseWorkoutCommand(
     );
     if (prefixExMatch && prefixExMatch[1].trim().length > 2) {
       const candidate = prefixExMatch[1].trim();
-      if (!/^(?:set|sets|reps|completed|workout|same|done|did)$/i.test(candidate)) {
+      if (isValidExerciseCandidate(candidate)) {
         detectedExercise = toTitleCase(candidate);
         working = working.replace(prefixExMatch[0], ' ');
       }
@@ -897,7 +981,7 @@ export function parseWorkoutCommand(
       .replace(/\s+/g, ' ')
       .trim();
 
-    if (cleanedResidual.length >= 3 && !/^(?:set|sets|reps|same|workout)$/i.test(cleanedResidual)) {
+    if (isValidExerciseCandidate(cleanedResidual)) {
       // Check if cleanedResidual is a close fuzzy match to any known alias
       let fallbackMatch: string | undefined;
       let maxSim = 0;
@@ -911,7 +995,7 @@ export function parseWorkoutCommand(
 
       if (fallbackMatch) {
         detectedExercise = fallbackMatch;
-      } else {
+      } else if (isValidExerciseCandidate(cleanedResidual)) {
         detectedUnknownExercise = cleanedResidual;
       }
     }
@@ -936,7 +1020,7 @@ export function parseWorkoutCommand(
   }
 
   // 10b. Unknown exercise candidate detected! Trigger CONFIRM_EXERCISE prompt
-  if (detectedUnknownExercise) {
+  if (detectedUnknownExercise && isValidExerciseCandidate(detectedUnknownExercise)) {
     const suggested = toTitleCase(detectedUnknownExercise);
     const resolvedWeight = isSameWeight ? (lastKnownWeight > 0 ? lastKnownWeight : undefined) : parsedWeight;
 

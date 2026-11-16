@@ -7,6 +7,7 @@
 import { Workout, UserProfile, HomeDashboardMetrics, WorkoutReviewMetrics, PersonalRecord, WeightUnit } from '@/types';
 import { getLocalDateKey } from '../history/dateGrouping';
 import { calculateSetVolume } from '../utils/unitConversion';
+import { calculateRecognitionAccuracy } from '../voice/voiceTelemetry';
 
 /**
  * Calculates Home Screen Weekly Snapshot metrics & Recent Activity snippet (Screen 1).
@@ -120,8 +121,8 @@ export function calculateHomeDashboardMetrics(
     const endMs = latest.completedAt ? new Date(latest.completedAt).getTime() : Date.now();
     const durationMinutes = Math.max(1, Math.round((endMs - startMs) / 60000));
 
-    const voiceAccuracyPercent =
-      latestSetsCount > 0 ? Math.round((latestVoiceSets / latestSetsCount) * 100) : 100;
+    const accuracyData = calculateRecognitionAccuracy([latest]);
+    const voiceAccuracyPercent = Math.round(accuracyData.accuracy);
 
     recentWorkout = {
       id: latest.id,
