@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Dumbbell, History, Settings, Play, CalendarRange } from 'lucide-react';
+import { Dumbbell, History, Play, CalendarRange, TrendingUp } from 'lucide-react';
 import { cn } from '@/lib/utils/cn';
 import { useAuth } from '@/context/AuthContext';
 
@@ -40,10 +40,10 @@ export function BottomNav({ hasActiveWorkout }: BottomNavProps) {
       active: pathname === '/history',
     },
     {
-      label: 'Settings',
-      href: '/settings',
-      icon: Settings,
-      active: pathname === '/settings',
+      label: 'Insights',
+      href: '/insights',
+      icon: TrendingUp,
+      active: pathname === '/insights' || pathname === '/insight',
     },
   ];
 

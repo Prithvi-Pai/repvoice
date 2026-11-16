@@ -23,9 +23,17 @@ import {
   Sliders,
   Timer,
   Sparkles,
+  Download,
+  CreditCard,
+  Crown,
+  FileSpreadsheet,
+  FileCode,
+  Calculator,
+  ChevronRight,
 } from 'lucide-react';
 import { getSupabaseConfig, getSupabaseClient } from '@/lib/supabase/client';
-import { getStoredProfile, saveStoredProfile } from '@/lib/storage';
+import { getStoredProfile, saveStoredProfile, getWorkoutHistory, syncUserProfileFromCloud } from '@/lib/storage';
+import { downloadWorkoutsCSV, downloadWorkoutsJSON } from '@/lib/export/csvExport';
 import { UserProfile, WeightUnit } from '@/types';
 import { BottomNav } from '@/components/layout/BottomNav';
 import { playAcousticChime, speakVoiceConfirmation } from '@/lib/voice/audioFeedback';
@@ -52,10 +60,33 @@ export default function SettingsPage() {
   const [speechSupport, setSpeechSupport] = useState<boolean>(false);
   const [micTesting, setMicTesting] = useState<boolean>(false);
   const [micTestText, setMicTestText] = useState<string>('');
+  const [exportNotice, setExportNotice] = useState<string | null>(null);
+  const [syncNotice, setSyncNotice] = useState<string | null>(null);
+
+  const handleExportCSV = async () => {
+    const history = await getWorkoutHistory();
+    const result = downloadWorkoutsCSV(history.workouts || []);
+    if (result.success) {
+      setExportNotice(`Exported ${result.count} workouts to ${result.filename}`);
+      setTimeout(() => setExportNotice(null), 3500);
+    }
+  };
+
+  const handleExportJSON = async () => {
+    const history = await getWorkoutHistory();
+    const result = downloadWorkoutsJSON(history.workouts || []);
+    if (result.success) {
+      setExportNotice(`Exported JSON data (${result.count} workouts)`);
+      setTimeout(() => setExportNotice(null), 3500);
+    }
+  };
 
   useEffect(() => {
     const loaded = getStoredProfile();
     setProfile(loaded);
+    if (user && loaded.id !== user.id) {
+      syncUserProfileFromCloud(user).then((p) => setProfile(p));
+    }
 
     const config = getSupabaseConfig();
     setIsConfigured(config.isConfigured);
@@ -63,13 +94,26 @@ export default function SettingsPage() {
     if (typeof window !== 'undefined') {
       const win = window as any;
       setSpeechSupport(Boolean(win.SpeechRecognition || win.webkitSpeechRecognition));
+
+      const handleProfileUpdate = (e: any) => {
+        if (e.detail) setProfile(e.detail);
+        else setProfile(getStoredProfile());
+      };
+      window.addEventListener('repvoice_profile_updated', handleProfileUpdate as EventListener);
+      return () => {
+        window.removeEventListener('repvoice_profile_updated', handleProfileUpdate as EventListener);
+      };
     }
-  }, []);
+  }, [user]);
 
   const updateProfileSetting = <K extends keyof UserProfile>(key: K, value: UserProfile[K]) => {
-    const updated = { ...profile, [key]: value };
-    setProfile(updated);
-    saveStoredProfile(updated);
+    setProfile((prev) => {
+      const updated = { ...prev, [key]: value };
+      saveStoredProfile(updated);
+      return updated;
+    });
+    setSyncNotice(user ? 'Saved & synced to account' : 'Saved locally');
+    setTimeout(() => setSyncNotice(null), 2500);
   };
 
   const handleTestConnection = async () => {
@@ -153,12 +197,20 @@ export default function SettingsPage() {
 
   return (
     <div className="space-y-5 pb-28 pt-2 max-w-md mx-auto px-4 font-sans text-[#e2e2e8]">
-      {/* Page Title */}
-      <div>
-        <span className="text-[10px] font-extrabold uppercase tracking-widest text-zinc-400 block mb-0.5">
-          Obsidian Settings
-        </span>
-        <h1 className="text-2xl font-black text-white tracking-tight">Audio & Preferences</h1>
+      {/* Page Title & Realtime Cloud Sync Notice */}
+      <div className="flex items-center justify-between">
+        <div>
+          <span className="text-[10px] font-extrabold uppercase tracking-widest text-zinc-400 block mb-0.5">
+            Obsidian Settings
+          </span>
+          <h1 className="text-2xl font-black text-white tracking-tight">Audio & Preferences</h1>
+        </div>
+        {syncNotice && (
+          <span className="text-[11px] font-bold text-white bg-zinc-900 border border-zinc-700 px-2.5 py-1 rounded-full flex items-center gap-1.5 animate-in fade-in">
+            <Check className="h-3 w-3 stroke-[3]" />
+            <span>{syncNotice}</span>
+          </span>
+        )}
       </div>
 
       {/* Account Section */}
@@ -346,34 +398,42 @@ export default function SettingsPage() {
       </div>
 
       {/* Preferred Weight Unit & Default Rest Timer */}
-      <div className="p-4 rounded-2xl bg-zinc-950 border border-zinc-800 space-y-3 shadow-lg">
+      <div className="p-4 rounded-2xl bg-zinc-950 border border-zinc-800 space-y-3.5 shadow-lg">
         <div className="flex items-center gap-2 text-white font-bold text-sm">
           <Scale className="h-4 w-4 text-zinc-300" />
           <span>Units & Rest Interval</span>
         </div>
 
-        <div className="grid grid-cols-2 gap-3">
+        <div className="space-y-3">
+          {/* Weight Unit Selection */}
           <div>
-            <label className="text-[10px] font-bold uppercase tracking-wider text-zinc-400 block mb-1">
-              Weight Unit
-            </label>
-            <div className="grid grid-cols-2 p-1 rounded-xl bg-black border border-zinc-850">
+            <div className="flex items-center justify-between mb-1.5">
+              <label className="text-[10px] font-bold uppercase tracking-wider text-zinc-400 block">
+                Preferred Weight Unit
+              </label>
+              <span className="text-[10px] font-extrabold uppercase font-mono text-zinc-200 bg-zinc-900 border border-zinc-800 px-2 py-0.5 rounded-md">
+                Active: {profile.preferredUnit}
+              </span>
+            </div>
+            <div className="grid grid-cols-2 p-1 rounded-xl bg-black border border-zinc-850 gap-1">
               <button
+                type="button"
                 onClick={() => updateProfileSetting('preferredUnit', 'lbs')}
-                className={`py-1.5 rounded-lg text-xs font-bold transition ${
+                className={`py-2 rounded-lg text-xs font-bold transition cursor-pointer ${
                   profile.preferredUnit === 'lbs'
-                    ? 'bg-zinc-800 text-white shadow'
-                    : 'text-zinc-400 hover:text-white'
+                    ? 'bg-white text-black font-extrabold shadow-md'
+                    : 'text-zinc-400 hover:text-white hover:bg-zinc-900'
                 }`}
               >
                 Pounds (lbs)
               </button>
               <button
+                type="button"
                 onClick={() => updateProfileSetting('preferredUnit', 'kg')}
-                className={`py-1.5 rounded-lg text-xs font-bold transition ${
+                className={`py-2 rounded-lg text-xs font-bold transition cursor-pointer ${
                   profile.preferredUnit === 'kg'
-                    ? 'bg-zinc-800 text-white shadow'
-                    : 'text-zinc-400 hover:text-white'
+                    ? 'bg-white text-black font-extrabold shadow-md'
+                    : 'text-zinc-400 hover:text-white hover:bg-zinc-900'
                 }`}
               >
                 Kilos (kg)
@@ -381,23 +441,209 @@ export default function SettingsPage() {
             </div>
           </div>
 
+          {/* Default Rest Timer Selection */}
           <div>
-            <label className="text-[10px] font-bold uppercase tracking-wider text-zinc-400 block mb-1">
-              Default Rest
-            </label>
-            <select
-              value={profile.defaultRestTimerSeconds || 90}
-              onChange={(e) => updateProfileSetting('defaultRestTimerSeconds', parseInt(e.target.value) || 90)}
-              className="w-full bg-black border border-zinc-800 rounded-xl px-2.5 py-2 text-xs text-white focus:outline-none focus:border-zinc-500"
-            >
-              <option value="30">30 seconds</option>
-              <option value="60">60 seconds</option>
-              <option value="90">90 seconds</option>
-              <option value="120">2 minutes</option>
-              <option value="180">3 minutes</option>
-            </select>
+            <div className="flex items-center justify-between mb-1.5">
+              <label className="text-[10px] font-bold uppercase tracking-wider text-zinc-400 block">
+                Default Rest Timer
+              </label>
+              <span className="text-[10px] font-extrabold font-mono text-zinc-200 bg-zinc-900 border border-zinc-800 px-2 py-0.5 rounded-md">
+                {profile.defaultRestTimerSeconds || 90}s ({Math.floor((profile.defaultRestTimerSeconds || 90) / 60)}m {((profile.defaultRestTimerSeconds || 90) % 60) > 0 ? `${(profile.defaultRestTimerSeconds || 90) % 60}s` : ''})
+              </span>
+            </div>
+            {/* Quick-Tap Timer Pills */}
+            <div className="grid grid-cols-5 p-1 rounded-xl bg-black border border-zinc-850 gap-1 text-center">
+              {[30, 60, 90, 120, 180].map((sec) => (
+                <button
+                  key={sec}
+                  type="button"
+                  onClick={() => updateProfileSetting('defaultRestTimerSeconds', sec)}
+                  className={`py-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${
+                    (profile.defaultRestTimerSeconds || 90) === sec
+                      ? 'bg-white text-black font-extrabold shadow-md'
+                      : 'text-zinc-400 hover:text-white hover:bg-zinc-900'
+                  }`}
+                >
+                  {sec >= 60 ? `${sec / 60}m` : `${sec}s`}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
+      </div>
+
+      {/* Athlete Anatomy & Gender (Controls Anatomical Heatmap) */}
+      <div className="p-4 rounded-2xl bg-zinc-950 border border-zinc-800 space-y-3 shadow-lg">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2 text-white font-bold text-sm">
+            <User className="h-4 w-4 text-zinc-300" />
+            <span>Athlete Anatomy & Silhouette</span>
+          </div>
+          <span className="text-[10px] font-bold text-zinc-300 bg-zinc-800 px-2 py-0.5 rounded-full uppercase border border-zinc-700">
+            Heatmap
+          </span>
+        </div>
+
+        <p className="text-xs text-zinc-400">
+          Choose your silhouette to customize the Muscle Group Distribution heatmap on your Home dashboard.
+        </p>
+
+        <div className="grid grid-cols-3 p-1 rounded-xl bg-black border border-zinc-850 gap-1">
+          <button
+            type="button"
+            onClick={() => updateProfileSetting('gender', 'male')}
+            className={`py-2 rounded-lg text-xs font-bold transition cursor-pointer ${
+              (profile.gender || 'male') === 'male'
+                ? 'bg-white text-black font-extrabold shadow-md'
+                : 'text-zinc-400 hover:text-white hover:bg-zinc-900'
+            }`}
+          >
+            Man
+          </button>
+          <button
+            type="button"
+            onClick={() => updateProfileSetting('gender', 'female')}
+            className={`py-2 rounded-lg text-xs font-bold transition cursor-pointer ${
+              profile.gender === 'female'
+                ? 'bg-white text-black font-extrabold shadow-md'
+                : 'text-zinc-400 hover:text-white hover:bg-zinc-900'
+            }`}
+          >
+            Woman
+          </button>
+          <button
+            type="button"
+            onClick={() => updateProfileSetting('gender', 'other')}
+            className={`py-2 rounded-lg text-xs font-bold transition cursor-pointer ${
+              profile.gender === 'other'
+                ? 'bg-white text-black font-extrabold shadow-md'
+                : 'text-zinc-400 hover:text-white hover:bg-zinc-900'
+            }`}
+          >
+            Neutral
+          </button>
+        </div>
+      </div>
+
+      {/* CSV Data Export Card */}
+      <div id="export" className="p-4 rounded-2xl bg-zinc-950 border border-zinc-800 space-y-3 shadow-lg">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2 text-white font-bold text-sm">
+            <FileSpreadsheet className="h-4 w-4 text-zinc-300" />
+            <span>CSV Data Export</span>
+          </div>
+          <span className="text-[10px] font-bold text-zinc-300 bg-zinc-800 px-2 py-0.5 rounded-full uppercase border border-zinc-700">
+            Export
+          </span>
+        </div>
+
+        <p className="text-xs text-zinc-400 leading-relaxed">
+          Export your entire workout catalog, individual sets, loads, repetitions, and classified muscle groups to standard RFC-compliant CSV or structured JSON.
+        </p>
+
+        {exportNotice && (
+          <div className="p-2.5 rounded-xl bg-zinc-900 border border-zinc-700 text-xs text-white flex items-center gap-2">
+            <Check className="h-3.5 w-3.5 text-white shrink-0" />
+            <span>{exportNotice}</span>
+          </div>
+        )}
+
+        <div className="grid grid-cols-2 gap-2.5">
+          <button
+            onClick={handleExportCSV}
+            className="py-2.5 px-3 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-white text-xs font-bold border border-zinc-750 flex items-center justify-center gap-2 transition cursor-pointer"
+          >
+            <Download className="h-3.5 w-3.5 text-white" />
+            <span>Download CSV</span>
+          </button>
+
+          <button
+            onClick={handleExportJSON}
+            className="py-2.5 px-3 rounded-xl bg-zinc-900 hover:bg-zinc-800 text-zinc-300 hover:text-white text-xs font-bold border border-zinc-800 flex items-center justify-center gap-2 transition cursor-pointer"
+          >
+            <FileCode className="h-3.5 w-3.5 text-zinc-400" />
+            <span>Download JSON</span>
+          </button>
+        </div>
+      </div>
+
+      {/* Subscription Management Card */}
+      <div id="subscription" className="p-4 rounded-2xl bg-zinc-950 border border-zinc-800 space-y-3 shadow-lg">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2 text-white font-bold text-sm">
+            <Crown className="h-4 w-4 text-white" />
+            <span>Subscription Management</span>
+          </div>
+          <span className="text-[10px] font-black text-black bg-white px-2 py-0.5 rounded-full uppercase tracking-wider">
+            Pro Active
+          </span>
+        </div>
+
+        <p className="text-xs text-zinc-400">
+          Your athlete account is unlocked with full access to RepVoice intelligence and hands-free logging capabilities.
+        </p>
+
+        <div className="p-3 rounded-xl bg-black border border-zinc-850 space-y-2 text-xs">
+          <div className="flex items-center gap-2 text-zinc-300">
+            <Check className="h-3.5 w-3.5 text-white shrink-0" />
+            <span>Continuous Voice Recognition with Audio Gate DSP</span>
+          </div>
+          <div className="flex items-center gap-2 text-zinc-300">
+            <Check className="h-3.5 w-3.5 text-white shrink-0" />
+            <span>Real-time Waveform & Ambient Noise Measurement</span>
+          </div>
+          <div className="flex items-center gap-2 text-zinc-300">
+            <Check className="h-3.5 w-3.5 text-white shrink-0" />
+            <span>Adaptive Continuous Exercise Learning & Aliases</span>
+          </div>
+          <div className="flex items-center gap-2 text-zinc-300">
+            <Check className="h-3.5 w-3.5 text-white shrink-0" />
+            <span>Gender Anatomical Heatmap & Progressive Overload Proof</span>
+          </div>
+          <div className="flex items-center gap-2 text-zinc-300">
+            <Check className="h-3.5 w-3.5 text-white shrink-0" />
+            <span>Encrypted Cloud Database Sync across Devices</span>
+          </div>
+        </div>
+
+        <button
+          onClick={() => {
+            setExportNotice('RepVoice Athlete Pro is active on your profile.');
+            setTimeout(() => setExportNotice(null), 3000);
+          }}
+          className="w-full py-2.5 rounded-xl bg-zinc-850 hover:bg-zinc-800 text-xs font-bold text-zinc-200 border border-zinc-750 flex items-center justify-center gap-2 transition cursor-pointer"
+        >
+          <CreditCard className="h-3.5 w-3.5 text-zinc-400" />
+          <span>Manage Subscription & Billing</span>
+        </button>
+      </div>
+
+      {/* Calculation Formulas & Metrics Engine Section */}
+      <div id="formulas" className="p-4 rounded-2xl bg-zinc-950 border border-zinc-800 space-y-3 shadow-lg">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2 text-white font-bold text-sm">
+            <Calculator className="h-4 w-4 text-zinc-300" />
+            <span>Formulas & Calculations</span>
+          </div>
+          <span className="text-[10px] font-bold text-zinc-300 bg-zinc-800 px-2 py-0.5 rounded-full uppercase border border-zinc-700">
+            Reference
+          </span>
+        </div>
+
+        <p className="text-xs text-zinc-400 leading-relaxed">
+          Inspect the exact mathematical formulas, biomechanical equations, and physiological estimation models used across RepVoice (Volume, 1RM, Overload Δ%, Calorie burn, Noise dB, and SNR).
+        </p>
+
+        <Link
+          href="/settings/formulas"
+          className="w-full py-2.5 px-3 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-xs font-bold text-white flex items-center justify-between transition group shadow-sm"
+        >
+          <div className="flex items-center gap-2">
+            <Calculator className="h-3.5 w-3.5 text-zinc-400 group-hover:text-white transition" />
+            <span>View All Calculation Formulas</span>
+          </div>
+          <ChevronRight className="h-4 w-4 text-zinc-400 group-hover:text-white transition" />
+        </Link>
       </div>
 
       {/* Supabase Connection Test */}

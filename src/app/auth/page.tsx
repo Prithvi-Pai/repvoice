@@ -14,7 +14,7 @@ import {
   Dumbbell
 } from 'lucide-react';
 import { getSupabaseClient } from '@/lib/supabase/client';
-import { getActiveWorkout } from '@/lib/storage';
+import { getActiveWorkout, syncUserProfileFromCloud } from '@/lib/storage';
 import { useAuth } from '@/context/AuthContext';
 
 export default function AuthPage() {
@@ -64,6 +64,9 @@ export default function AuthPage() {
             'Account created! A confirmation email has been sent. Please confirm before signing in.'
           );
         } else {
+          if (data.session?.user) {
+            await syncUserProfileFromCloud(data.session.user);
+          }
           setSuccessMessage('Account created and signed in successfully! Redirecting...');
           setTimeout(() => {
             router.replace('/');
@@ -78,6 +81,9 @@ export default function AuthPage() {
         if (error) throw error;
 
         if (data.session) {
+          if (data.session.user) {
+            await syncUserProfileFromCloud(data.session.user);
+          }
           setSuccessMessage('Signed in successfully! Redirecting...');
           setTimeout(() => {
             router.replace('/');

@@ -345,3 +345,35 @@ export async function saveLearnedAlias(
     };
   }
 }
+
+/**
+ * Removes a learned voice alias from localStorage and Supabase.
+ */
+export async function deleteLearnedAlias(spokenPhrase: string): Promise<void> {
+  const norm = normalizeAliasText(spokenPhrase);
+  if (!norm) return;
+
+  if (typeof window !== 'undefined') {
+    try {
+      const localAliases = getLocalCustomAliases();
+      delete localAliases[norm];
+      localStorage.setItem(LOCAL_STORAGE_ALIASES_KEY, JSON.stringify(localAliases));
+    } catch (e) {
+      console.warn('Failed to delete alias locally:', e);
+    }
+  }
+
+  const client = getSupabaseClient();
+  if (client) {
+    try {
+      const { data: { user } } = await client.auth.getUser();
+      if (user) {
+        await client
+          .from('exercise_aliases')
+          .delete()
+          .eq('user_id', user.id)
+          .ilike('alias_text', norm);
+      }
+    } catch {}
+  }
+}

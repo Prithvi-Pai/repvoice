@@ -10,6 +10,7 @@ import React, {
 } from 'react';
 import { User, Session } from '@supabase/supabase-js';
 import { getSupabaseClient } from '@/lib/supabase/client';
+import { syncUserProfileFromCloud } from '@/lib/storage';
 
 export interface AuthContextType {
   user: User | null;
@@ -51,6 +52,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       } else if (data?.session) {
         setSession(data.session);
         setUser(data.session.user);
+        syncUserProfileFromCloud(data.session.user).catch(() => {});
       } else {
         setUser(null);
         setSession(null);
@@ -76,10 +78,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // Subscribe to real-time auth changes (SIGNED_IN, SIGNED_OUT, TOKEN_REFRESHED, etc.)
     const {
       data: { subscription },
-    } = client.auth.onAuthStateChange((_event, currentSession) => {
+    } = client.auth.onAuthStateChange((event, currentSession) => {
       if (currentSession?.user) {
         setSession(currentSession);
         setUser(currentSession.user);
+        // Only pull cloud profile on explicit user login, never on self-triggered USER_UPDATED
+        if (event === 'SIGNED_IN') {
+          syncUserProfileFromCloud(currentSession.user).catch(() => {});
+        }
       } else {
         setSession(null);
         setUser(null);

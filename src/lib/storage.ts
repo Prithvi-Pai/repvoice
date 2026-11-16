@@ -3,6 +3,7 @@ import { getSupabaseClient } from './supabase/client';
 import { evaluateWorkoutPRs, getPersonalRecords, savePersonalRecords } from './records/personalRecordEngine';
 import { calculateEstimatedCalories } from './analytics/metricsEngine';
 import { getLocalDateKey, getTodayAndYesterdayKeys } from './history/dateGrouping';
+import { calculateSetVolume } from './utils/unitConversion';
 
 const LOCAL_STORAGE_ACTIVE_WORKOUT = 'repvoice_active_workout';
 const LOCAL_STORAGE_HISTORY = 'repvoice_history';
@@ -11,6 +12,7 @@ const LOCAL_STORAGE_PROFILE = 'repvoice_profile';
 const DEFAULT_PROFILE: UserProfile = {
   id: 'guest_user',
   displayName: 'Alex Rivera',
+  gender: 'male',
   preferredUnit: 'lbs',
   recognitionMode: 'continuous',
   spokenConfirmations: true,
@@ -22,7 +24,7 @@ const DEFAULT_PROFILE: UserProfile = {
     'https://lh3.googleusercontent.com/aida-public/AB6AXuClVv5wgXLrvyRzdO7Eik3r5l8aISphqWp3hold4ED1IKJ7-NhddH-_U_1b4pLpvodGjpHHYXujZcKxS_GERyM-_wguqO5mZKdhuxV7TTJccItS4cw9OVX5Ue2k58i_844QOF_Z_VQf11JKvHGtSWkaBabR9cOPddr2WQ4UzOct0hXePTEuxSps5K74srBgsYKsa-kCy_SYc4X-bdudvAR89C1fTD2tBzyoimXs7dk',
 };
 
-// Profile storage
+// Profile storage & Cloud Persistence
 export function getStoredProfile(): UserProfile {
   if (typeof window === 'undefined') return DEFAULT_PROFILE;
   try {
@@ -33,9 +35,188 @@ export function getStoredProfile(): UserProfile {
   }
 }
 
+/**
+ * Asynchronously persists the user profile and preferences to Supabase Cloud.
+ * Dual-syncs to Supabase Auth user_metadata (always available without schema constraints)
+ * and public.profiles table (PostgreSQL relational record).
+ */
+export async function persistProfileToCloud(profile: UserProfile): Promise<void> {
+  const client = getSupabaseClient();
+  if (!client) return;
+
+  try {
+    const {
+      data: { user },
+    } = await client.auth.getUser();
+    if (!user) return;
+
+    const payload = {
+      ...profile,
+      id: user.id,
+      email: user.email || profile.email,
+    };
+
+    // 1. Update Supabase Auth user_metadata (never blocked by RLS or missing columns)
+    await client.auth.updateUser({
+      data: {
+        profile: payload,
+      },
+    });
+
+    // 2. Also upsert into public.profiles relational table if available
+    try {
+      await client.from('profiles').upsert(
+        {
+          id: user.id,
+          display_name: profile.displayName || user.user_metadata?.display_name || 'Gym Athlete',
+          preferred_unit: profile.preferredUnit || 'lbs',
+          recognition_mode: profile.recognitionMode || 'continuous',
+          spoken_confirmations: profile.spokenConfirmations !== false,
+          beep_on_record: profile.beepOnRecord !== false,
+          microphone_sensitivity: profile.microphoneSensitivity || 'aggressive',
+          default_rest_timer_seconds: profile.defaultRestTimerSeconds || 90,
+          gender: profile.gender || 'male',
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: 'id' }
+      );
+    } catch (tableErr) {
+      console.warn('profiles table upsert notice (user_metadata was saved):', tableErr);
+    }
+  } catch (err: any) {
+    console.warn('persistProfileToCloud notice:', err?.message || err);
+  }
+}
+
+/**
+ * Pulls and synchronizes the user's saved settings from Supabase Cloud on login/session restore.
+ * Merges cloud preferences with local storage so user settings persist across devices and re-logins.
+ */
+export async function syncUserProfileFromCloud(providedUser?: any): Promise<UserProfile> {
+  const currentLocal = getStoredProfile();
+  const client = getSupabaseClient();
+  if (!client) return currentLocal;
+
+  try {
+    let authUser = providedUser;
+    if (!authUser) {
+      const {
+        data: { user },
+      } = await client.auth.getUser();
+      authUser = user;
+    }
+
+    if (!authUser) return currentLocal;
+
+    const userId = authUser.id;
+    let cloudProfile: Partial<UserProfile> | null = null;
+
+    // Check user_metadata first (fastest and most reliable)
+    if (authUser.user_metadata?.profile) {
+      cloudProfile = authUser.user_metadata.profile;
+    }
+
+    // Also check public.profiles table
+    try {
+      const { data: profileRow, error } = await client
+        .from('profiles')
+        .select('*')
+        .eq('id', userId)
+        .maybeSingle();
+
+      if (!error && profileRow) {
+        cloudProfile = {
+          ...cloudProfile,
+          id: profileRow.id,
+          displayName: profileRow.display_name || cloudProfile?.displayName,
+          preferredUnit: profileRow.preferred_unit || cloudProfile?.preferredUnit,
+          recognitionMode: profileRow.recognition_mode || cloudProfile?.recognitionMode,
+          spokenConfirmations: profileRow.spoken_confirmations ?? cloudProfile?.spokenConfirmations,
+          beepOnRecord: profileRow.beep_on_record ?? cloudProfile?.beepOnRecord,
+          microphoneSensitivity: profileRow.microphone_sensitivity || cloudProfile?.microphoneSensitivity,
+          defaultRestTimerSeconds: profileRow.default_rest_timer_seconds || cloudProfile?.defaultRestTimerSeconds,
+          gender: profileRow.gender || cloudProfile?.gender,
+        };
+      }
+    } catch {
+      // ignore
+    }
+
+    // Check user-specific cached profile in localStorage
+    let userCachedProfile: Partial<UserProfile> | null = null;
+    if (typeof window !== 'undefined') {
+      try {
+        const rawUserCache = localStorage.getItem(`${LOCAL_STORAGE_PROFILE}_${userId}`);
+        if (rawUserCache) userCachedProfile = JSON.parse(rawUserCache);
+      } catch {
+        // ignore
+      }
+    }
+
+    // Determine precedence:
+    // If user on this browser already has this account's settings, local is authoritative (never revert fresh clicks).
+    // If this is a fresh login on a new device/browser (guest profile currently active), cloud settings are authoritative.
+    const isLocalCustomizedForThisUser = currentLocal && currentLocal.id === userId;
+
+    const merged: UserProfile = isLocalCustomizedForThisUser
+      ? {
+          ...DEFAULT_PROFILE,
+          ...cloudProfile,
+          ...userCachedProfile,
+          ...currentLocal, // Local authoritative!
+          id: userId,
+          email: authUser.email || currentLocal.email,
+        }
+      : {
+          ...DEFAULT_PROFILE,
+          ...currentLocal,
+          ...cloudProfile, // Cloud authoritative on fresh login!
+          id: userId,
+          email: authUser.email || cloudProfile?.email || currentLocal.email,
+        };
+
+    // If local settings were authoritative, push to cloud to keep cloud in sync
+    if (isLocalCustomizedForThisUser) {
+      persistProfileToCloud(merged).catch(() => {});
+    } else if (!cloudProfile && (currentLocal.preferredUnit || currentLocal.gender)) {
+      // If cloud was empty, seed cloud with local choices
+      persistProfileToCloud(merged).catch(() => {});
+    }
+
+    // Save to local storage & broadcast to all UI listeners
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.setItem(LOCAL_STORAGE_PROFILE, JSON.stringify(merged));
+        localStorage.setItem(`${LOCAL_STORAGE_PROFILE}_${userId}`, JSON.stringify(merged));
+        window.dispatchEvent(new CustomEvent('repvoice_profile_updated', { detail: merged }));
+        window.dispatchEvent(new Event('storage'));
+      } catch {
+        // ignore
+      }
+    }
+
+    return merged;
+  } catch (err: any) {
+    console.warn('syncUserProfileFromCloud notice:', err?.message || err);
+    return currentLocal;
+  }
+}
+
 export function saveStoredProfile(profile: UserProfile): void {
   if (typeof window === 'undefined') return;
-  localStorage.setItem(LOCAL_STORAGE_PROFILE, JSON.stringify(profile));
+  try {
+    localStorage.setItem(LOCAL_STORAGE_PROFILE, JSON.stringify(profile));
+    if (profile.id && profile.id !== 'guest_user' && profile.id !== 'guest') {
+      localStorage.setItem(`${LOCAL_STORAGE_PROFILE}_${profile.id}`, JSON.stringify(profile));
+    }
+    window.dispatchEvent(new CustomEvent('repvoice_profile_updated', { detail: profile }));
+    window.dispatchEvent(new Event('storage'));
+  } catch (e) {
+    console.warn('saveStoredProfile localStorage error:', e);
+  }
+
+  // Push updates to cloud if authenticated
+  persistProfileToCloud(profile).catch(() => {});
 }
 
 // Active in-progress workout
@@ -336,6 +517,8 @@ export async function saveFinishedWorkout(workout: Workout): Promise<SaveWorkout
   const workoutId = isValidUUID(workout.id) ? workout.id : generateUUID();
 
   // Compute session telemetry
+  const profile = getStoredProfile();
+  const preferredUnit = profile.preferredUnit || 'kg';
   let totalVolume = 0;
   let totalSets = 0;
   let voiceSetsCount = 0;
@@ -344,7 +527,7 @@ export async function saveFinishedWorkout(workout: Workout): Promise<SaveWorkout
     for (const s of ex.sets) {
       if (s.isCompleted) {
         totalSets++;
-        totalVolume += (s.weight || 0) * (s.reps || 0);
+        totalVolume += calculateSetVolume(s.weight, s.reps, s.unit, preferredUnit);
         if (s.isVoiceLogged !== false) voiceSetsCount++;
       }
     }
@@ -492,6 +675,8 @@ export function saveWorkoutLocally(workout: Workout): SaveWorkoutResult {
   const workoutId = isValidUUID(workout.id) ? workout.id : generateUUID();
 
   // Compute session telemetry if missing
+  const profile = getStoredProfile();
+  const preferredUnit = profile.preferredUnit || 'kg';
   let totalVolume = 0;
   let totalSets = 0;
   let voiceSetsCount = 0;
@@ -500,7 +685,7 @@ export function saveWorkoutLocally(workout: Workout): SaveWorkoutResult {
     for (const s of ex.sets) {
       if (s.isCompleted) {
         totalSets++;
-        totalVolume += (s.weight || 0) * (s.reps || 0);
+        totalVolume += calculateSetVolume(s.weight, s.reps, s.unit, preferredUnit);
         if (s.isVoiceLogged !== false) voiceSetsCount++;
       }
     }
@@ -610,13 +795,15 @@ export async function updateWorkoutTitle(workoutId: string, newTitle: string): P
  */
 export async function updateWorkoutInHistory(updatedWorkout: Workout): Promise<SaveWorkoutResult> {
   // Recalculate metrics
+  const profile = getStoredProfile();
+  const preferredUnit = profile.preferredUnit || 'kg';
   let totalVolume = 0;
   let totalSets = 0;
   for (const ex of updatedWorkout.exercises) {
     for (const s of ex.sets) {
       if (s.isCompleted !== false) {
         totalSets++;
-        totalVolume += (Number(s.weight) || 0) * (Number(s.reps) || 0);
+        totalVolume += calculateSetVolume(s.weight, s.reps, s.unit, preferredUnit);
       }
     }
   }

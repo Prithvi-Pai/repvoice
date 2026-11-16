@@ -28,6 +28,7 @@ import {
   Calendar,
   StopCircle,
   RefreshCw,
+  TrendingUp,
 } from 'lucide-react';
 import {
   Workout,
@@ -86,11 +87,20 @@ import {
   releaseGymNoiseReduction,
 } from '@/lib/voice/audioCaptureEnhancer';
 import { GymAudioIntelligence } from '@/components/audio/GymAudioIntelligence';
+import { MuscleGroupPromptModal } from '@/components/workout/MuscleGroupPromptModal';
+import {
+  identifyExerciseMuscleGroup,
+  saveCustomExerciseMuscle,
+  getWorkoutMuscleGroupsSummary,
+  MUSCLE_GROUP_LABELS,
+} from '@/lib/exercises/muscleGroupStore';
+import { Gender, MuscleGroup } from '@/types';
 import { generateDailyRecommendation } from '@/lib/recommendation/recommendationEngine';
 import { getLocalDateKey, generateDefaultWorkoutName, isGenericWorkoutTitle } from '@/lib/history/dateGrouping';
 import { WorkoutReviewModal } from '@/components/workout/WorkoutReviewModal';
 import { getPreviousPerformanceForExercise } from '@/lib/history/previousPerformance';
 import { calculateEstimatedCalories } from '@/lib/analytics/metricsEngine';
+import { calculateSetVolume } from '@/lib/utils/unitConversion';
 
 export default function WorkoutPage() {
   const [activeWorkout, setActiveWorkout] = useState<Workout | null>(null);
@@ -125,6 +135,8 @@ export default function WorkoutPage() {
     }
   }, [user]);
   const [preferredUnit, setPreferredUnit] = useState<WeightUnit>('kg');
+  const [userGender, setUserGender] = useState<Gender>('male');
+  const [musclePromptExercise, setMusclePromptExercise] = useState<string | null>(null);
   const [clarificationState, setClarificationState] = useState<ClarificationState | null>(null);
 
   // Independent per-set active timers (keyed by set.id)
@@ -152,7 +164,7 @@ export default function WorkoutPage() {
         for (const ex of w.exercises) {
           for (const s of ex.sets) {
             if (s.isCompleted) {
-              weeklyVolume += (s.weight || 0) * (s.reps || 0);
+              weeklyVolume += calculateSetVolume(s.weight, s.reps, s.unit, preferredUnit);
             }
           }
         }
@@ -187,7 +199,7 @@ export default function WorkoutPage() {
       weeklyVolumeFormatted,
       totalWorkoutsCount: workoutHistory.length,
     };
-  }, [workoutHistory, dailyRecommendation, availablePlans]);
+  }, [workoutHistory, dailyRecommendation, availablePlans, preferredUnit]);
 
   const refreshRecommendations = useCallback((unit: WeightUnit) => {
     getWorkoutHistory().then((res) => {
@@ -207,6 +219,7 @@ export default function WorkoutPage() {
     const profile = getStoredProfile();
     const unit = profile.preferredUnit || 'kg';
     setPreferredUnit(unit);
+    setUserGender(profile.gender || 'male');
     refreshRecommendations(unit);
 
     getWorkoutPlans().then((res) => {
@@ -255,7 +268,19 @@ export default function WorkoutPage() {
       }
     });
 
+    const handleSyncProfile = (e?: any) => {
+      const p = e?.detail || getStoredProfile();
+      if (p.gender) setUserGender(p.gender);
+      if (p.preferredUnit) setPreferredUnit(p.preferredUnit);
+    };
+    window.addEventListener('focus', handleSyncProfile);
+    window.addEventListener('storage', handleSyncProfile);
+    window.addEventListener('repvoice_profile_updated', handleSyncProfile as EventListener);
+
     return () => {
+      window.removeEventListener('focus', handleSyncProfile);
+      window.removeEventListener('storage', handleSyncProfile);
+      window.removeEventListener('repvoice_profile_updated', handleSyncProfile as EventListener);
       if (authSubscription) authSubscription.unsubscribe();
     };
   }, [refreshRecommendations]);
@@ -541,9 +566,46 @@ export default function WorkoutPage() {
         type: 'success',
         message: `Logged ${cleanName}: ${weight} ${pending.unit} × ${reps} reps. Learned alias for "${phrase}"!`,
       });
+      checkAndPromptMuscleGroup(cleanName);
     },
     [activeWorkout, setTimerSeconds, handleStartWorkout, updateWorkout, updateSelectedExerciseId, playSoundChime]
   );
+
+  // Muscle group classification check for custom / unknown user exercise names
+  const checkAndPromptMuscleGroup = useCallback((exerciseName: string) => {
+    if (!exerciseName || exerciseName.trim().toLowerCase() === 'exercise') return;
+    const { isKnown } = identifyExerciseMuscleGroup(exerciseName);
+    if (!isKnown) {
+      setMusclePromptExercise(exerciseName.trim());
+    }
+  }, []);
+
+  const handleSelectMuscleGroupForExercise = async (group: MuscleGroup) => {
+    if (!musclePromptExercise) return;
+    const exName = musclePromptExercise;
+    setMusclePromptExercise(null);
+
+    await saveCustomExerciseMuscle(exName, group);
+
+    const currentW = activeWorkoutRef.current || activeWorkout;
+    if (currentW) {
+      const updatedExercises = currentW.exercises.map((ex) =>
+        ex.exerciseName.toLowerCase() === exName.toLowerCase()
+          ? { ...ex, muscleGroup: group }
+          : ex
+      );
+      updateWorkout({
+        ...currentW,
+        exercises: updatedExercises,
+        muscleGroupDescription: getWorkoutMuscleGroupsSummary({ ...currentW, exercises: updatedExercises }),
+      });
+    }
+
+    setSaveStatus({
+      type: 'success',
+      message: `Categorized "${exName}" under ${MUSCLE_GROUP_LABELS[group]}. RepVoice will remember this!`,
+    });
+  };
 
   // Execute direct set insertion/update
   const executeDirectSetCommand = useCallback(
@@ -635,6 +697,7 @@ export default function WorkoutPage() {
             exerciseName: command.exercise,
             sets: [newSet],
           });
+          checkAndPromptMuscleGroup(command.exercise);
         }
 
         setSaveStatus({
@@ -647,7 +710,7 @@ export default function WorkoutPage() {
       updateSelectedExerciseId(targetExerciseId);
       playSoundChime();
     },
-    [setTimerSeconds, updateWorkout, updateSelectedExerciseId, playSoundChime]
+    [setTimerSeconds, updateWorkout, updateSelectedExerciseId, playSoundChime, checkAndPromptMuscleGroup]
   );
 
   // Toggle inline timer directly on a set row (Feature: Inline Set Timer)
@@ -1628,6 +1691,7 @@ export default function WorkoutPage() {
     });
     updateSelectedExerciseId(newExId);
     setQuickExerciseInput('');
+    checkAndPromptMuscleGroup(name);
   };
 
   // Set management
@@ -1771,11 +1835,13 @@ export default function WorkoutPage() {
         type: 'info',
         message: `Merged ${targetEx.sets.length} sets from "${targetEx.exerciseName}" into "${destinationEx.exerciseName}".`,
       });
+      checkAndPromptMuscleGroup(cleanTitle);
     } else {
       // Update exercise name in place, preserving all sets
       const updatedExercises = [...currentW.exercises];
       updatedExercises[exerciseIndex] = { ...targetEx, exerciseName: cleanTitle };
       updateWorkout({ ...currentW, exercises: updatedExercises });
+      checkAndPromptMuscleGroup(cleanTitle);
     }
   };
 
@@ -1921,7 +1987,9 @@ export default function WorkoutPage() {
         return (
           sum +
           ex.sets.reduce((sSum, s) => {
-            return s.isCompleted ? sSum + s.weight * s.reps : sSum;
+            return s.isCompleted
+              ? sSum + calculateSetVolume(s.weight, s.reps, s.unit || preferredUnit, preferredUnit)
+              : sSum;
           }, 0)
         );
       }, 0)
@@ -1966,6 +2034,61 @@ export default function WorkoutPage() {
       {/* VIEW A: NO ACTIVE WORKOUT -> STITCH OBSIDIAN HOME SCREEN */}
       {!activeWorkout && (
         <div className="space-y-6 pt-1 select-none">
+          {/* Quick Stats Weekly Snapshot (Moved to Top) */}
+          <div className="flex flex-col gap-2">
+            <div className="flex items-center justify-between px-1">
+              <span className="text-xs font-bold uppercase tracking-wider text-zinc-400">
+                Weekly Snapshot
+              </span>
+              <span className="text-xs font-bold text-white flex items-center gap-1">
+                Active Cycle
+              </span>
+            </div>
+            <div className="grid grid-cols-3 gap-2.5">
+              {/* Streak */}
+              <div className="rounded-2xl bg-zinc-950 border border-zinc-800 p-3.5 flex flex-col justify-between shadow-sm">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-semibold text-zinc-400">Streak</span>
+                  <span className="text-sm leading-none">🔥</span>
+                </div>
+                <div className="mt-2">
+                  <span className="text-xl font-black text-white tracking-tight tabular-nums">
+                    {homeMetrics.streakDays}
+                  </span>
+                  <span className="text-xs text-zinc-400 ml-1">Days</span>
+                </div>
+              </div>
+
+              {/* Weekly Volume */}
+              <div className="rounded-2xl bg-zinc-950 border border-zinc-800 p-3.5 flex flex-col justify-between shadow-sm">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-semibold text-zinc-400">Volume</span>
+                  <Dumbbell className="h-4 w-4 text-zinc-400" />
+                </div>
+                <div className="mt-2">
+                  <span className="text-xl font-black text-white tracking-tight tabular-nums">
+                    {homeMetrics.weeklyVolumeFormatted}
+                  </span>
+                  <span className="text-xs text-zinc-400 ml-1">{preferredUnit}</span>
+                </div>
+              </div>
+
+              {/* Total Workouts */}
+              <div className="rounded-2xl bg-zinc-950 border border-zinc-800 p-3.5 flex flex-col justify-between shadow-sm">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-semibold text-zinc-400">Logged</span>
+                  <Trophy className="h-4 w-4 text-zinc-400" />
+                </div>
+                <div className="mt-2">
+                  <span className="text-xl font-black text-white tracking-tight tabular-nums">
+                    {homeMetrics.totalWorkoutsCount}
+                  </span>
+                  <span className="text-xs text-zinc-400 ml-1">Total</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
           {/* Top Motivation & Focus Banner */}
           <div className="relative overflow-hidden rounded-2xl bg-zinc-950 border border-zinc-800 p-4 shadow-md flex items-center justify-between">
             <div className="flex items-center gap-3">
@@ -2140,63 +2263,35 @@ export default function WorkoutPage() {
             </div>
           )}
 
-          {/* Quick Stats Weekly Snapshot */}
-          <div className="flex flex-col gap-2">
-            <div className="flex items-center justify-between px-1">
-              <span className="text-xs font-bold uppercase tracking-wider text-zinc-400">
-                Weekly Snapshot
-              </span>
-              <span className="text-xs font-bold text-white flex items-center gap-1">
-                Active Cycle
-              </span>
-            </div>
-            <div className="grid grid-cols-3 gap-2.5">
-              {/* Streak */}
-              <div className="rounded-2xl bg-zinc-950 border border-zinc-800 p-3.5 flex flex-col justify-between shadow-sm">
-                <div className="flex items-center justify-between">
-                  <span className="text-[11px] font-semibold text-zinc-400">Streak</span>
-                  <span className="text-sm leading-none">🔥</span>
-                </div>
-                <div className="mt-2">
-                  <span className="text-xl font-black text-white tracking-tight tabular-nums">
-                    {homeMetrics.streakDays}
-                  </span>
-                  <span className="text-xs text-zinc-400 ml-1">Days</span>
-                </div>
-              </div>
-
-              {/* Weekly Volume */}
-              <div className="rounded-2xl bg-zinc-950 border border-zinc-800 p-3.5 flex flex-col justify-between shadow-sm">
-                <div className="flex items-center justify-between">
-                  <span className="text-[11px] font-semibold text-zinc-400">Volume</span>
-                  <Dumbbell className="h-4 w-4 text-zinc-400" />
-                </div>
-                <div className="mt-2">
-                  <span className="text-xl font-black text-white tracking-tight tabular-nums">
-                    {homeMetrics.weeklyVolumeFormatted}
-                  </span>
-                  <span className="text-xs text-zinc-400 ml-1">{preferredUnit}</span>
-                </div>
-              </div>
-
-              {/* Total Workouts */}
-              <div className="rounded-2xl bg-zinc-950 border border-zinc-800 p-3.5 flex flex-col justify-between shadow-sm">
-                <div className="flex items-center justify-between">
-                  <span className="text-[11px] font-semibold text-zinc-400">Logged</span>
-                  <Trophy className="h-4 w-4 text-zinc-400" />
-                </div>
-                <div className="mt-2">
-                  <span className="text-xl font-black text-white tracking-tight tabular-nums">
-                    {homeMetrics.totalWorkoutsCount}
-                  </span>
-                  <span className="text-xs text-zinc-400 ml-1">Total</span>
-                </div>
-              </div>
-            </div>
-          </div>
-
           {/* Gym Audio Intelligence Feature */}
           <GymAudioIntelligence />
+
+          {/* Training Insights & Anatomical Heatmap Banner */}
+          <Link
+            href="/insights"
+            className="p-4 rounded-3xl bg-zinc-950 border border-zinc-800 hover:border-zinc-700 transition flex items-center justify-between group shadow-lg"
+          >
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-2xl bg-zinc-900 border border-zinc-800 flex items-center justify-center text-white group-hover:scale-105 transition">
+                <TrendingUp className="h-5 w-5" />
+              </div>
+              <div>
+                <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-400 block mb-0.5">
+                  Intelligence Hub
+                </span>
+                <h3 className="text-sm font-extrabold text-white flex items-center gap-1.5">
+                  <span>Training Insights & Heatmap</span>
+                  <Sparkles className="h-3 w-3 text-white" />
+                </h3>
+                <p className="text-[11px] text-zinc-400 mt-0.5">
+                  Progressive overload benchmarks, gender heatmap, and muscle learning
+                </p>
+              </div>
+            </div>
+            <div className="w-8 h-8 rounded-full bg-zinc-900 flex items-center justify-center text-zinc-400 group-hover:text-white group-hover:bg-zinc-800 transition shrink-0 ml-2">
+              <ChevronRight className="h-4 w-4" />
+            </div>
+          </Link>
 
           {/* Recent Activity Snippet */}
           {lastWorkout && (
@@ -2895,6 +2990,14 @@ export default function WorkoutPage() {
           onDismiss={() => setClarificationState(null)}
         />
       )}
+
+      {/* Custom Exercise Muscle Group Disambiguation Modal */}
+      <MuscleGroupPromptModal
+        isOpen={Boolean(musclePromptExercise)}
+        exerciseName={musclePromptExercise || ''}
+        onSelectMuscleGroup={handleSelectMuscleGroupForExercise}
+        onClose={() => setMusclePromptExercise(null)}
+      />
 
       {/* Persistent Bottom Nav */}
       <BottomNav hasActiveWorkout={Boolean(activeWorkout)} />
