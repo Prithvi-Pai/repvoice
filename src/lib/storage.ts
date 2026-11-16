@@ -7,7 +7,6 @@ import { getLocalDateKey, getTodayAndYesterdayKeys } from './history/dateGroupin
 const LOCAL_STORAGE_ACTIVE_WORKOUT = 'repvoice_active_workout';
 const LOCAL_STORAGE_HISTORY = 'repvoice_history';
 const LOCAL_STORAGE_PROFILE = 'repvoice_profile';
-export const LOCAL_STORAGE_RESUMABLE_SESSION = 'repvoice_resumable_session';
 
 const DEFAULT_PROFILE: UserProfile = {
   id: 'guest_user',
@@ -126,52 +125,10 @@ export async function autoSaveActiveWorkout(
   // Save to Supabase and localStorage history
   await saveFinishedWorkout(workoutToSave);
 
-  // Record resumable session marker for today so next login or History can resume it
-  if (typeof window !== 'undefined') {
-    const todayKey = getLocalDateKey(new Date());
-    localStorage.setItem(
-      LOCAL_STORAGE_RESUMABLE_SESSION,
-      JSON.stringify({
-        workoutId: workoutToSave.id,
-        dateKey: todayKey,
-        reason,
-        savedAt: new Date().toISOString(),
-      })
-    );
-  }
-
   // Clear active workout from active slot
   saveActiveWorkout(null);
 
   return workoutToSave;
-}
-
-/**
- * Checks if there is a pending resumable session from today.
- */
-export function getResumableSession(): { workoutId: string; dateKey: string; reason: string } | null {
-  if (typeof window === 'undefined') return null;
-  try {
-    const raw = localStorage.getItem(LOCAL_STORAGE_RESUMABLE_SESSION);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw);
-    const { todayKey } = getTodayAndYesterdayKeys();
-    if (parsed.dateKey === todayKey && parsed.workoutId) {
-      return parsed;
-    }
-    return null;
-  } catch {
-    return null;
-  }
-}
-
-/**
- * Clears the resumable session marker from localStorage.
- */
-export function clearResumableSession(): void {
-  if (typeof window !== 'undefined') {
-    localStorage.removeItem(LOCAL_STORAGE_RESUMABLE_SESSION);
-  }
 }
 
 /**
@@ -200,9 +157,6 @@ export async function resumeWorkoutFromHistory(workoutId: string): Promise<Worko
 
   // Set as the active workout
   saveActiveWorkout(resumed);
-
-  // Clear resumable marker
-  clearResumableSession();
 
   return resumed;
 }
