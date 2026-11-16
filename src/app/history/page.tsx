@@ -20,20 +20,27 @@ import {
   X,
   Pencil,
   Check,
+  Play,
 } from 'lucide-react';
 import { Workout, WorkoutExercise } from '@/types';
 import {
   getWorkoutHistory,
   deleteWorkoutFromHistory,
   updateWorkoutTitle,
+  updateWorkoutInHistory,
   saveActiveWorkout,
+  getActiveWorkout,
+  resumeWorkoutFromHistory,
 } from '@/lib/storage';
+import { toTitleCase, saveLearnedAlias } from '@/lib/exercises/exerciseStore';
 import { BottomNav } from '@/components/layout/BottomNav';
 import { formatDate, formatDuration } from '@/lib/utils/cn';
 import {
   groupWorkoutsByDate,
   filterWorkoutsBySpecificDate,
   formatLocalDateLabel,
+  getLocalDateKey,
+  getTodayAndYesterdayKeys,
 } from '@/lib/history/dateGrouping';
 import { HistoryCalendarModal } from '@/components/history/HistoryCalendarModal';
 import { calculateMonthlyRollup } from '@/lib/analytics/metricsEngine';
@@ -81,6 +88,221 @@ export default function HistoryPage() {
     e.stopPropagation();
     setEditingWorkoutId(null);
     setEditingTitle('');
+  };
+
+  // Exercise and Set editing state for historical workouts
+  const [editingExerciseKey, setEditingExerciseKey] = useState<string | null>(null);
+  const [editingExerciseName, setEditingExerciseName] = useState<string>('');
+  const [addingExerciseWorkoutId, setAddingExerciseWorkoutId] = useState<string | null>(null);
+  const [newExerciseName, setNewExerciseName] = useState<string>('');
+  const [editingSetKey, setEditingSetKey] = useState<string | null>(null);
+  const [editingSetWeight, setEditingSetWeight] = useState<string>('');
+  const [editingSetReps, setEditingSetReps] = useState<string>('');
+
+  // 1. Rename Exercise in Past Workout
+  const handleSaveExerciseName = async (workoutId: string, exIndex: number) => {
+    const clean = toTitleCase(editingExerciseName.trim());
+    if (!clean) return;
+
+    const targetWorkout = workouts.find((w) => w.id === workoutId);
+    if (!targetWorkout || !targetWorkout.exercises[exIndex]) return;
+
+    const oldName = targetWorkout.exercises[exIndex].exerciseName;
+    const updatedExercises = targetWorkout.exercises.map((ex, idx) =>
+      idx === exIndex ? { ...ex, exerciseName: clean } : ex
+    );
+
+    const updatedWorkout: Workout = {
+      ...targetWorkout,
+      exercises: updatedExercises,
+    };
+
+    setWorkouts((prev) => prev.map((w) => (w.id === workoutId ? updatedWorkout : w)));
+    setEditingExerciseKey(null);
+
+    await updateWorkoutInHistory(updatedWorkout);
+
+    // If renamed, also reinforce learned alias so future voice recognitions immediately map
+    if (oldName.toLowerCase() !== clean.toLowerCase()) {
+      saveLearnedAlias(oldName, clean).catch((err) =>
+        console.info('Learned alias from history rename:', err)
+      );
+    }
+  };
+
+  // 2. Delete Exercise from Past Workout
+  const handleDeleteExerciseInHistory = async (
+    workoutId: string,
+    exIndex: number,
+    exerciseName: string
+  ) => {
+    if (!confirm(`Delete "${exerciseName}" and its sets from this workout?`)) return;
+
+    const targetWorkout = workouts.find((w) => w.id === workoutId);
+    if (!targetWorkout) return;
+
+    const updatedExercises = targetWorkout.exercises.filter((_, idx) => idx !== exIndex);
+    const updatedWorkout: Workout = {
+      ...targetWorkout,
+      exercises: updatedExercises,
+    };
+
+    setWorkouts((prev) => prev.map((w) => (w.id === workoutId ? updatedWorkout : w)));
+    await updateWorkoutInHistory(updatedWorkout);
+  };
+
+  // 3. Add New Exercise to Past Workout
+  const handleSaveNewExercise = async (workoutId: string) => {
+    const clean = toTitleCase(newExerciseName.trim());
+    if (!clean) return;
+
+    const targetWorkout = workouts.find((w) => w.id === workoutId);
+    if (!targetWorkout) return;
+
+    const newExId =
+      typeof crypto !== 'undefined' && crypto.randomUUID
+        ? crypto.randomUUID()
+        : `ex_${Date.now()}_${Math.random()}`;
+    const newSetId =
+      typeof crypto !== 'undefined' && crypto.randomUUID
+        ? crypto.randomUUID()
+        : `set_${Date.now()}_0`;
+
+    const newExercise: WorkoutExercise = {
+      id: newExId,
+      exerciseName: clean,
+      sets: [
+        {
+          id: newSetId,
+          setNumber: 1,
+          weight: 0,
+          reps: 10,
+          unit: 'kg',
+          isCompleted: true,
+        },
+      ],
+    };
+
+    const updatedWorkout: Workout = {
+      ...targetWorkout,
+      exercises: [...targetWorkout.exercises, newExercise],
+    };
+
+    setWorkouts((prev) => prev.map((w) => (w.id === workoutId ? updatedWorkout : w)));
+    setAddingExerciseWorkoutId(null);
+    setNewExerciseName('');
+
+    await updateWorkoutInHistory(updatedWorkout);
+  };
+
+  // 4. Add Set to Exercise in Past Workout
+  const handleAddSetToHistory = async (workoutId: string, exIndex: number) => {
+    const targetWorkout = workouts.find((w) => w.id === workoutId);
+    if (!targetWorkout || !targetWorkout.exercises[exIndex]) return;
+
+    const targetEx = targetWorkout.exercises[exIndex];
+    const lastSet = targetEx.sets[targetEx.sets.length - 1];
+    const newSetId =
+      typeof crypto !== 'undefined' && crypto.randomUUID
+        ? crypto.randomUUID()
+        : `set_${Date.now()}_${targetEx.sets.length}`;
+
+    const newSet = {
+      id: newSetId,
+      setNumber: targetEx.sets.length + 1,
+      weight: lastSet ? lastSet.weight : 0,
+      reps: lastSet ? lastSet.reps : 10,
+      unit: lastSet ? lastSet.unit : 'kg',
+      isCompleted: true,
+    };
+
+    const updatedExercises = targetWorkout.exercises.map((ex, idx) =>
+      idx === exIndex ? { ...ex, sets: [...ex.sets, newSet] } : ex
+    );
+
+    const updatedWorkout: Workout = {
+      ...targetWorkout,
+      exercises: updatedExercises,
+    };
+
+    setWorkouts((prev) => prev.map((w) => (w.id === workoutId ? updatedWorkout : w)));
+    await updateWorkoutInHistory(updatedWorkout);
+  };
+
+  // 5. Save edited set in Past Workout
+  const handleSaveSet = async (workoutId: string, exIndex: number, setIndex: number) => {
+    const targetWorkout = workouts.find((w) => w.id === workoutId);
+    if (!targetWorkout || !targetWorkout.exercises[exIndex]) return;
+
+    const parsedWeight = parseFloat(editingSetWeight);
+    const parsedReps = parseInt(editingSetReps, 10);
+
+    const safeWeight = isNaN(parsedWeight) ? 0 : Math.max(0, parsedWeight);
+    const safeReps = isNaN(parsedReps) ? 0 : Math.max(0, parsedReps);
+
+    const updatedExercises = targetWorkout.exercises.map((ex, eIdx) => {
+      if (eIdx !== exIndex) return ex;
+      const updatedSets = ex.sets.map((s, sIdx) => {
+        if (sIdx !== setIndex) return s;
+        return {
+          ...s,
+          weight: safeWeight,
+          reps: safeReps,
+        };
+      });
+      return { ...ex, sets: updatedSets };
+    });
+
+    const updatedWorkout: Workout = {
+      ...targetWorkout,
+      exercises: updatedExercises,
+    };
+
+    setWorkouts((prev) => prev.map((w) => (w.id === workoutId ? updatedWorkout : w)));
+    setEditingSetKey(null);
+
+    await updateWorkoutInHistory(updatedWorkout);
+  };
+
+  // 6. Delete set from past workout
+  const handleDeleteSetInHistory = async (
+    workoutId: string,
+    exIndex: number,
+    setIndex: number
+  ) => {
+    const targetWorkout = workouts.find((w) => w.id === workoutId);
+    if (!targetWorkout || !targetWorkout.exercises[exIndex]) return;
+
+    const targetEx = targetWorkout.exercises[exIndex];
+
+    if (targetEx.sets.length <= 1) {
+      if (
+        confirm(
+          `This is the only set for "${targetEx.exerciseName}". Delete the entire exercise?`
+        )
+      ) {
+        handleDeleteExerciseInHistory(workoutId, exIndex, targetEx.exerciseName);
+      }
+      return;
+    }
+
+    const updatedSets = targetEx.sets
+      .filter((_, sIdx) => sIdx !== setIndex)
+      .map((s, idx) => ({ ...s, setNumber: idx + 1 }));
+
+    const updatedExercises = targetWorkout.exercises.map((ex, eIdx) =>
+      eIdx === exIndex ? { ...ex, sets: updatedSets } : ex
+    );
+
+    const updatedWorkout: Workout = {
+      ...targetWorkout,
+      exercises: updatedExercises,
+    };
+
+    setWorkouts((prev) => prev.map((w) => (w.id === workoutId ? updatedWorkout : w)));
+    setEditingSetKey(null);
+
+    await updateWorkoutInHistory(updatedWorkout);
   };
 
   const rollup = calculateMonthlyRollup(workouts);
@@ -144,6 +366,44 @@ export default function HistoryPage() {
     router.push('/');
   };
 
+  // Resume an existing completed/auto-saved workout from today
+  const handleResumeWorkout = async (workout: Workout) => {
+    const active = getActiveWorkout();
+    if (active && active.id !== workout.id && active.exercises.some((e) => e.sets.length > 0)) {
+      if (
+        !confirm(
+          `You already have an active workout in progress ("${active.title}"). Switch and resume "${workout.title}" from earlier today?`
+        )
+      ) {
+        return;
+      }
+    }
+
+    try {
+      const resumed = await resumeWorkoutFromHistory(workout.id);
+      if (resumed) {
+        setWorkouts((prev) => prev.filter((w) => w.id !== workout.id));
+        router.push('/');
+      } else {
+        const priorDuration = workout.durationSeconds || 0;
+        const adjustedStartedAt = new Date(Date.now() - priorDuration * 1000).toISOString();
+        const fallbackResumed: Workout = {
+          ...workout,
+          startedAt: adjustedStartedAt,
+          completedAt: undefined,
+          lastEntryAt: new Date().toISOString(),
+          isResumed: true,
+        };
+        saveActiveWorkout(fallbackResumed);
+        await deleteWorkoutFromHistory(workout.id);
+        setWorkouts((prev) => prev.filter((w) => w.id !== workout.id));
+        router.push('/');
+      }
+    } catch (err: any) {
+      alert(`Failed to resume workout: ${err?.message || err}`);
+    }
+  };
+
   // Helper to calculate duration in minutes
   const getDurationText = (w: Workout) => {
     if (!w.completedAt) return 'In progress';
@@ -169,6 +429,8 @@ export default function HistoryPage() {
     const isExpanded = expandedWorkoutId === workout.id;
     const volume = getWorkoutVolume(workout);
     const totalSets = workout.exercises.reduce((sum, ex) => sum + ex.sets.length, 0);
+    const { todayKey } = getTodayAndYesterdayKeys();
+    const isToday = getLocalDateKey(workout.startedAt || workout.completedAt || new Date()) === todayKey;
 
     return (
       <div
@@ -232,7 +494,20 @@ export default function HistoryPage() {
                 </div>
               </div>
             )}
-            <div className="flex items-center gap-1">
+            <div className="flex items-center gap-1.5">
+              {isToday && (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleResumeWorkout(workout);
+                  }}
+                  className="px-2.5 py-1 rounded-lg bg-white text-black hover:bg-zinc-200 text-[11px] font-black flex items-center gap-1 shadow-sm transition cursor-pointer shrink-0"
+                  title="Resume this session from earlier today"
+                >
+                  <Play className="h-3 w-3 fill-black" />
+                  <span>Resume</span>
+                </button>
+              )}
               <button
                 onClick={(e) => {
                   e.stopPropagation();
@@ -283,51 +558,279 @@ export default function HistoryPage() {
         {isExpanded && (
           <div className="border-t border-zinc-800 bg-zinc-950/80 p-4 space-y-3 animate-in fade-in">
             <div className="space-y-3">
-              {workout.exercises.map((exercise, idx) => (
-                <div
-                  key={exercise.id || idx}
-                  className="p-3 rounded-2xl bg-zinc-900 border border-zinc-800/80 space-y-2"
-                >
-                  <div className="flex items-center justify-between">
-                    <span className="font-bold text-xs text-white">
-                      {exercise.exerciseName}
-                    </span>
-                    <span className="text-[10px] text-zinc-400 font-mono">
-                      {exercise.sets.length} {exercise.sets.length === 1 ? 'set' : 'sets'}
-                    </span>
-                  </div>
-
-                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
-                    {exercise.sets.map((s, sIdx) => (
-                      <div
-                        key={s.id || sIdx}
-                        className="px-2 py-1.5 rounded-lg bg-zinc-950 border border-zinc-850 text-center"
-                      >
-                        <div className="flex items-center justify-center gap-1 text-[10px] text-zinc-400">
-                          <span>Set {s.setNumber || sIdx + 1}</span>
-                          {s.durationSeconds ? (
-                            <span className="font-mono text-amber-400">({s.durationSeconds}s)</span>
-                          ) : null}
+              {workout.exercises.map((exercise, idx) => {
+                const isEditingEx = editingExerciseKey === `${workout.id}_${idx}`;
+                return (
+                  <div
+                    key={exercise.id || idx}
+                    className="p-3.5 rounded-2xl bg-zinc-900 border border-zinc-800/80 space-y-2.5"
+                  >
+                    {/* Exercise Header with Inline Edit and Delete */}
+                    <div className="flex items-center justify-between pb-2 border-b border-zinc-800/60">
+                      {isEditingEx ? (
+                        <div className="flex items-center gap-1.5 flex-1 mr-2" onClick={(e) => e.stopPropagation()}>
+                          <input
+                            type="text"
+                            value={editingExerciseName}
+                            onChange={(e) => setEditingExerciseName(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') handleSaveExerciseName(workout.id, idx);
+                              if (e.key === 'Escape') setEditingExerciseKey(null);
+                            }}
+                            autoFocus
+                            className="flex-1 bg-zinc-950 border border-zinc-700 focus:border-white rounded-lg px-2 py-1 text-xs text-white font-bold outline-none"
+                          />
+                          <button
+                            onClick={() => handleSaveExerciseName(workout.id, idx)}
+                            className="p-1.5 rounded-lg bg-white text-black hover:bg-zinc-200 transition cursor-pointer"
+                            title="Save Exercise Name"
+                          >
+                            <Check className="h-3 w-3 stroke-[3]" />
+                          </button>
+                          <button
+                            onClick={() => setEditingExerciseKey(null)}
+                            className="p-1.5 rounded-lg bg-zinc-800 text-zinc-400 hover:text-white transition cursor-pointer"
+                            title="Cancel"
+                          >
+                            <X className="h-3 w-3" />
+                          </button>
                         </div>
-                        <span className="font-extrabold text-xs text-white">
-                          {s.weight} {s.unit || 'kg'}{' '}
-                          <span className="text-zinc-300 font-normal">× {s.reps}</span>
+                      ) : (
+                        <div className="flex items-center gap-2">
+                          <span className="font-extrabold text-xs text-white">
+                            {exercise.exerciseName}
+                          </span>
+                          <button
+                            onClick={() => {
+                              setEditingExerciseKey(`${workout.id}_${idx}`);
+                              setEditingExerciseName(exercise.exerciseName);
+                            }}
+                            className="p-1 rounded-md text-zinc-500 hover:text-white hover:bg-zinc-800 transition cursor-pointer"
+                            title="Edit exercise name"
+                          >
+                            <Pencil className="h-3 w-3" />
+                          </button>
+                        </div>
+                      )}
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] text-zinc-400 font-mono">
+                          {exercise.sets.length} {exercise.sets.length === 1 ? 'set' : 'sets'}
                         </span>
+                        <button
+                          onClick={() => handleDeleteExerciseInHistory(workout.id, idx, exercise.exerciseName)}
+                          className="p-1 rounded-md text-zinc-600 hover:text-rose-400 hover:bg-zinc-800 transition cursor-pointer"
+                          title="Delete exercise"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
                       </div>
-                    ))}
+                    </div>
+
+                    {/* Sets Grid */}
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
+                      {exercise.sets.map((s, sIdx) => {
+                        const isEditingSet = editingSetKey === `${workout.id}_${idx}_${sIdx}`;
+                        if (isEditingSet) {
+                          return (
+                            <div
+                              key={s.id || sIdx}
+                              className="col-span-2 sm:col-span-3 p-2.5 rounded-xl bg-zinc-950 border border-zinc-700 space-y-2 shadow-md animate-in fade-in"
+                            >
+                              <div className="flex items-center justify-between text-[11px] text-zinc-300 font-bold">
+                                <span>Editing Set {s.setNumber || sIdx + 1}</span>
+                                <button
+                                  onClick={() => handleDeleteSetInHistory(workout.id, idx, sIdx)}
+                                  className="text-zinc-500 hover:text-rose-400 transition text-[10px] flex items-center gap-1 cursor-pointer"
+                                  title="Delete this set"
+                                >
+                                  <Trash2 className="h-3 w-3" /> Delete Set
+                                </button>
+                              </div>
+                              <div className="grid grid-cols-2 gap-2">
+                                <div>
+                                  <label className="text-[10px] uppercase tracking-wider text-zinc-400 block mb-0.5">
+                                    Weight ({s.unit || 'kg'})
+                                  </label>
+                                  <input
+                                    type="number"
+                                    step="any"
+                                    value={editingSetWeight}
+                                    onChange={(e) => setEditingSetWeight(e.target.value)}
+                                    autoFocus
+                                    className="w-full bg-zinc-900 border border-zinc-700 focus:border-white rounded-lg px-2.5 py-1 text-xs text-white font-bold outline-none"
+                                  />
+                                </div>
+                                <div>
+                                  <label className="text-[10px] uppercase tracking-wider text-zinc-400 block mb-0.5">
+                                    Reps
+                                  </label>
+                                  <input
+                                    type="number"
+                                    min="0"
+                                    value={editingSetReps}
+                                    onChange={(e) => setEditingSetReps(e.target.value)}
+                                    className="w-full bg-zinc-900 border border-zinc-700 focus:border-white rounded-lg px-2.5 py-1 text-xs text-white font-bold outline-none"
+                                  />
+                                </div>
+                              </div>
+                              <div className="flex items-center justify-end gap-1.5 pt-1">
+                                <button
+                                  onClick={() => handleSaveSet(workout.id, idx, sIdx)}
+                                  className="px-3 py-1 rounded-lg bg-white text-black font-extrabold text-xs hover:bg-zinc-200 transition cursor-pointer"
+                                >
+                                  Save Set
+                                </button>
+                                <button
+                                  onClick={() => setEditingSetKey(null)}
+                                  className="px-3 py-1 rounded-lg bg-zinc-850 text-zinc-400 font-bold text-xs hover:text-white transition cursor-pointer"
+                                >
+                                  Cancel
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        }
+
+                        return (
+                          <div
+                            key={s.id || sIdx}
+                            onClick={() => {
+                              setEditingSetKey(`${workout.id}_${idx}_${sIdx}`);
+                              setEditingSetWeight(String(s.weight));
+                              setEditingSetReps(String(s.reps));
+                            }}
+                            className="px-2 py-1.5 rounded-lg bg-zinc-950 border border-zinc-850 hover:border-zinc-700 transition cursor-pointer text-center group relative"
+                            title="Tap to edit weight / reps"
+                          >
+                            <div className="flex items-center justify-between text-[10px] text-zinc-400">
+                              <span>Set {s.setNumber || sIdx + 1}</span>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleDeleteSetInHistory(workout.id, idx, sIdx);
+                                }}
+                                className="opacity-0 group-hover:opacity-100 text-zinc-500 hover:text-rose-400 transition cursor-pointer"
+                                title="Delete set"
+                              >
+                                <Trash2 className="h-2.5 w-2.5" />
+                              </button>
+                            </div>
+                            <div className="flex items-center justify-center gap-1">
+                              <span className="font-extrabold text-xs text-white">
+                                {s.weight} {s.unit || 'kg'}{' '}
+                                <span className="text-zinc-400 font-normal">× {s.reps}</span>
+                              </span>
+                              <Pencil className="h-2.5 w-2.5 text-zinc-600 group-hover:text-zinc-300 transition" />
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    {/* Add Set button */}
+                    <button
+                      onClick={() => handleAddSetToHistory(workout.id, idx)}
+                      className="w-full py-1.5 rounded-lg border border-dashed border-zinc-800 hover:border-zinc-700 bg-zinc-950/40 hover:bg-zinc-900 text-zinc-400 hover:text-white text-[11px] font-bold flex items-center justify-center gap-1 transition cursor-pointer"
+                    >
+                      <Plus className="h-3 w-3" /> Add Set
+                    </button>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
 
-            {/* Action: Repeat Workout */}
-            <div className="pt-2">
+            {/* Add Exercise to this Past Workout */}
+            {addingExerciseWorkoutId === workout.id ? (
+              <div className="p-3.5 rounded-2xl bg-zinc-900 border border-zinc-700 space-y-2.5 shadow-lg animate-in fade-in">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-300">
+                    Add Exercise to Workout
+                  </span>
+                  <button
+                    onClick={() => {
+                      setAddingExerciseWorkoutId(null);
+                      setNewExerciseName('');
+                    }}
+                    className="text-zinc-500 hover:text-white cursor-pointer"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+
+                <div className="flex items-center gap-1.5">
+                  <input
+                    type="text"
+                    placeholder="e.g. Incline Dumbbell Press"
+                    value={newExerciseName}
+                    onChange={(e) => setNewExerciseName(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') handleSaveNewExercise(workout.id);
+                      if (e.key === 'Escape') {
+                        setAddingExerciseWorkoutId(null);
+                        setNewExerciseName('');
+                      }
+                    }}
+                    autoFocus
+                    className="flex-1 bg-zinc-950 border border-zinc-700 focus:border-white rounded-xl px-3 py-1.5 text-xs text-white placeholder-zinc-500 font-medium outline-none"
+                  />
+                  <button
+                    onClick={() => handleSaveNewExercise(workout.id)}
+                    disabled={!newExerciseName.trim()}
+                    className="px-3 py-1.5 rounded-xl bg-white hover:bg-zinc-200 text-black font-extrabold text-xs transition disabled:opacity-40 cursor-pointer"
+                  >
+                    Add
+                  </button>
+                </div>
+
+                {/* Quick Suggestion Chips */}
+                <div className="flex flex-wrap gap-1 pt-1">
+                  {['Bench Press', 'Squat', 'Deadlift', 'Shoulder Press', 'Lat Pulldown', 'Bicep Curl', 'Tricep Pushdown'].map(
+                    (chip) => (
+                      <button
+                        key={chip}
+                        type="button"
+                        onClick={() => setNewExerciseName(chip)}
+                        className="text-[10px] px-2 py-0.5 rounded-full bg-zinc-950 hover:bg-zinc-800 border border-zinc-800 text-zinc-400 hover:text-white transition cursor-pointer"
+                      >
+                        {chip}
+                      </button>
+                    )
+                  )}
+                </div>
+              </div>
+            ) : (
+              <button
+                onClick={() => {
+                  setAddingExerciseWorkoutId(workout.id);
+                  setNewExerciseName('');
+                }}
+                className="w-full py-2.5 rounded-xl border border-dashed border-zinc-750 hover:border-zinc-500 bg-zinc-900/60 hover:bg-zinc-850 text-zinc-300 hover:text-white text-xs font-bold flex items-center justify-center gap-1.5 transition cursor-pointer"
+              >
+                <Plus className="h-3.5 w-3.5" /> Add New Exercise
+              </button>
+            )}
+
+            {/* Actions: Resume Workout (Only for Today) & Repeat Workout */}
+            <div className="pt-2 space-y-2">
+              {isToday && (
+                <button
+                  onClick={() => handleResumeWorkout(workout)}
+                  className="w-full py-2.5 rounded-xl bg-white hover:bg-zinc-200 text-black font-black text-xs flex items-center justify-center gap-1.5 shadow-[0_2px_15px_rgba(255,255,255,0.15)] transition cursor-pointer"
+                >
+                  <Play className="h-3.5 w-3.5 fill-black" />
+                  Resume Today's Workout Session
+                </button>
+              )}
               <button
                 onClick={() => handleRepeat(workout)}
-                className="w-full py-2.5 rounded-xl bg-white hover:bg-zinc-200 text-black font-extrabold text-xs flex items-center justify-center gap-1.5 shadow-md transition cursor-pointer"
+                className={`w-full ${
+                  isToday
+                    ? 'py-2 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-zinc-750 text-zinc-300 hover:text-white font-bold'
+                    : 'py-2.5 rounded-xl bg-white hover:bg-zinc-200 text-black font-extrabold shadow-md'
+                } text-xs flex items-center justify-center gap-1.5 transition cursor-pointer`}
               >
                 <RotateCcw className="h-3.5 w-3.5" />
-                Repeat This Workout
+                {isToday ? 'Repeat As New Workout' : 'Repeat This Workout'}
               </button>
             </div>
           </div>
@@ -618,7 +1121,7 @@ export default function HistoryPage() {
       )}
 
       {/* Bottom Nav */}
-      <BottomNav />
+      <BottomNav hasActiveWorkout={Boolean(getActiveWorkout())} />
     </div>
   );
 }

@@ -48,6 +48,11 @@ import {
   saveWorkoutLocally,
   getWorkoutHistory,
   getStoredProfile,
+  autoSaveActiveWorkout,
+  getResumableSession,
+  resumeWorkoutFromHistory,
+  checkAndHandleInactivityTimeout,
+  getLatestSetTimestamp,
 } from '@/lib/storage';
 import { getWorkoutPlans, instantiateWorkoutFromPlan } from '@/lib/plans/planStore';
 import { calculateHomeDashboardMetrics } from '@/lib/analytics/metricsEngine';
@@ -226,18 +231,52 @@ export default function WorkoutPage() {
       authSubscription = subscription;
     }
 
-    const current = getActiveWorkout();
-    if (current) {
-      activeWorkoutRef.current = current;
-      setActiveWorkout(current);
-      if (current.exercises.length > 0) {
-        const lastExId = current.exercises[current.exercises.length - 1].id;
-        selectedExerciseIdRef.current = lastExId;
-        setSelectedExerciseId(lastExId);
+    // Check for 1-hour inactivity timeout or resume old session on login
+    checkAndHandleInactivityTimeout().then((autoSaved) => {
+      if (autoSaved) {
+        activeWorkoutRef.current = null;
+        setActiveWorkout(null);
+        setSaveStatus({
+          type: 'info',
+          message: 'Workout auto-saved after 1 hour without entries. You can resume it anytime today from History.',
+        });
+      } else {
+        const current = getActiveWorkout();
+        if (current) {
+          activeWorkoutRef.current = current;
+          setActiveWorkout(current);
+          if (current.exercises.length > 0) {
+            const lastExId = current.exercises[current.exercises.length - 1].id;
+            selectedExerciseIdRef.current = lastExId;
+            setSelectedExerciseId(lastExId);
+          }
+          const startMs = new Date(current.startedAt).getTime();
+          setElapsedSeconds(Math.max(0, Math.floor((Date.now() - startMs) / 1000)));
+        } else {
+          // Check if user logged off earlier and can resume from old session today
+          const resumable = getResumableSession();
+          if (resumable) {
+            resumeWorkoutFromHistory(resumable.workoutId).then((resumed) => {
+              if (resumed) {
+                activeWorkoutRef.current = resumed;
+                setActiveWorkout(resumed);
+                if (resumed.exercises.length > 0) {
+                  const lastExId = resumed.exercises[resumed.exercises.length - 1].id;
+                  selectedExerciseIdRef.current = lastExId;
+                  setSelectedExerciseId(lastExId);
+                }
+                const startMs = new Date(resumed.startedAt).getTime();
+                setElapsedSeconds(Math.max(0, Math.floor((Date.now() - startMs) / 1000)));
+                setSaveStatus({
+                  type: 'info',
+                  message: `Resumed your workout session ("${resumed.title}") from earlier today.`,
+                });
+              }
+            });
+          }
+        }
       }
-      const startMs = new Date(current.startedAt).getTime();
-      setElapsedSeconds(Math.max(0, Math.floor((Date.now() - startMs) / 1000)));
-    }
+    });
 
     return () => {
       if (authSubscription) authSubscription.unsubscribe();
@@ -285,11 +324,17 @@ export default function WorkoutPage() {
     return () => clearInterval(interval);
   }, [activeSetTimers]);
 
-  // Sync active workout to local storage and synchronous ref
+  // Sync active workout to local storage and synchronous ref, refreshing lastEntryAt
   const updateWorkout = useCallback((updated: Workout | null) => {
-    activeWorkoutRef.current = updated;
-    setActiveWorkout(updated);
-    saveActiveWorkout(updated);
+    const withEntryTime = updated
+      ? {
+          ...updated,
+          lastEntryAt: new Date().toISOString(),
+        }
+      : null;
+    activeWorkoutRef.current = withEntryTime;
+    setActiveWorkout(withEntryTime);
+    saveActiveWorkout(withEntryTime);
   }, []);
 
   // Update selected exercise ID in both state and synchronous ref
@@ -1538,31 +1583,30 @@ export default function WorkoutPage() {
     }
   };
 
-  // 30-Minute Inactivity Auto-Finish Check
+  // 1-Hour Inactivity Auto-Save Check
+  // If there is no entry after 1 hour, the timer stops, exercise is auto-saved, and marked resumable
   useEffect(() => {
-    const interval = setInterval(() => {
+    const interval = setInterval(async () => {
       const liveWorkout = activeWorkoutRef.current;
       if (!liveWorkout) return;
 
       const hasAnySets = liveWorkout.exercises.some((e) => e.sets.length > 0);
-      if (!hasAnySets) return;
+      if (!hasAnySets && liveWorkout.exercises.length === 0) return;
 
-      const idleTime = Date.now() - lastWorkoutActivityTimeRef.current;
-      const THIRTY_MINUTES = 30 * 60 * 1000;
+      const startTime = new Date(liveWorkout.startedAt).getTime();
+      const lastEntryTime = liveWorkout.lastEntryAt
+        ? new Date(liveWorkout.lastEntryAt).getTime()
+        : getLatestSetTimestamp(liveWorkout) || startTime;
 
-      if (idleTime >= THIRTY_MINUTES) {
-        console.info('Workout auto-finished due to 30 minutes of inactivity');
-        const autoTitle = liveWorkout.title || generateDefaultWorkoutName(new Date());
-        const finishedWorkout: Workout = {
-          ...liveWorkout,
-          title: autoTitle,
-          completedAt: new Date().toISOString(),
-          notes: 'Auto-saved after 30 minutes of inactivity.',
-        };
+      const ONE_HOUR = 60 * 60 * 1000;
+      const idleTime = Date.now() - lastEntryTime;
 
+      if (idleTime >= ONE_HOUR) {
+        console.info('Workout auto-saved due to 1 hour without entries');
         stopContinuousListening();
 
-        saveFinishedWorkout(finishedWorkout).then((res) => {
+        const autoSaved = await autoSaveActiveWorkout('inactivity');
+        if (autoSaved) {
           updateWorkout(null);
           updateSelectedExerciseId(null);
           setActiveSetTimers({});
@@ -1572,9 +1616,9 @@ export default function WorkoutPage() {
           setSetTimerSeconds(0);
           setSaveStatus({
             type: 'info',
-            message: `Workout auto-saved as "${autoTitle}" after 30 minutes of inactivity.`,
+            message: 'Workout auto-saved after 1 hour without entries. You can resume it anytime today from History.',
           });
-        });
+        }
       }
     }, 15000);
 
@@ -1707,6 +1751,18 @@ export default function WorkoutPage() {
 
     const cleanTitle = toTitleCase(trimmed);
     const targetEx = currentW.exercises[exerciseIndex];
+    const previousName = targetEx.exerciseName;
+
+    // Immediately teach the voice recognizer this custom correction for continuous learning
+    if (previousName.toLowerCase().trim() !== cleanTitle.toLowerCase().trim()) {
+      setCustomAliases((prev) => ({
+        ...prev,
+        [previousName.toLowerCase().trim()]: cleanTitle,
+      }));
+      saveLearnedAlias(previousName, cleanTitle).catch((err) =>
+        console.info('Learned alias save notice:', err)
+      );
+    }
 
     // Check if another exercise in the current session matches the corrected name (using canonical matcher)
     const matchingIdx = currentW.exercises.findIndex(
