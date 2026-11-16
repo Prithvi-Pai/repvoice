@@ -160,8 +160,8 @@ export function ProgressiveOverloadSection({
     let startVal = metricMode === 'weight' ? first.topWeight : metricMode === '1rm' ? first.estimated1RM : first.volume;
     let endVal = metricMode === 'weight' ? last.topWeight : metricMode === '1rm' ? last.estimated1RM : last.volume;
 
-    const delta = endVal - startVal;
-    const pct = startVal > 0 ? Math.round((delta / startVal) * 100) : 0;
+    const delta = Number((endVal - startVal).toFixed(2));
+    const pct = startVal > 0 ? Number(((delta / startVal) * 100).toFixed(2)) : 0;
     const peak = Math.max(...points.map((p) => (metricMode === 'weight' ? p.topWeight : metricMode === '1rm' ? p.estimated1RM : p.volume)));
 
     return {
@@ -172,6 +172,13 @@ export function ProgressiveOverloadSection({
       milestoneCount: prsCount,
     };
   }, [workoutHistory, selectedExercise, metricMode, preferredUnit]);
+
+  // Formats Strength Delta up to 2 decimal places with sign prefix
+  const formatStrengthDelta = (val: number) => {
+    const rounded = Number(val.toFixed(2));
+    const sign = rounded >= 0 ? '+' : '';
+    return `${sign}${rounded.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
+  };
 
   // SVG Chart Geometry
   const svgWidth = 500;
@@ -302,7 +309,7 @@ export function ProgressiveOverloadSection({
           </span>
           <div className="mt-1 flex items-baseline gap-1.5">
             <span className="text-xl font-black text-white tracking-tight">
-              {overallDelta >= 0 ? `+${overallDelta}` : overallDelta}{' '}
+              {formatStrengthDelta(overallDelta)}{' '}
               <span className="text-xs font-normal text-zinc-400">
                 {metricMode === 'volume' ? preferredUnit : preferredUnit}
               </span>

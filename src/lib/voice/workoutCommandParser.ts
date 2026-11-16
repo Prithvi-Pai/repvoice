@@ -13,18 +13,24 @@ import { toTitleCase } from '../exercises/exerciseStore';
 export const EXERCISE_ALIASES: Record<string, string> = {
   // Incline bench press
   'incline dumbbell bench press': 'Incline Dumbbell Bench Press',
+  'incline dumbbell bench': 'Incline Dumbbell Bench Press',
   'incline dumbbell press': 'Incline Dumbbell Bench Press',
   'incline db bench press': 'Incline Dumbbell Bench Press',
+  'incline db bench': 'Incline Dumbbell Bench Press',
   'incline db press': 'Incline Dumbbell Bench Press',
   'incline barbell bench press': 'Incline Barbell Bench Press',
+  'incline barbell bench': 'Incline Barbell Bench Press',
+  'incline barbell press': 'Incline Barbell Bench Press',
   'incline bench press': 'Incline Bench Press',
   'incline bench': 'Incline Bench Press',
   'incline press': 'Incline Bench Press',
 
   // Flat & dumbbell bench press
   'flat dumbbell bench press': 'Flat Dumbbell Bench Press',
+  'flat dumbbell bench': 'Flat Dumbbell Bench Press',
   'flat dumbbell press': 'Flat Dumbbell Bench Press',
   'flat db bench press': 'Flat Dumbbell Bench Press',
+  'flat db bench': 'Flat Dumbbell Bench Press',
   'dumbbell bench press': 'Dumbbell Bench Press',
   'dumbbell bench': 'Dumbbell Bench Press',
   'db bench press': 'Dumbbell Bench Press',
@@ -35,6 +41,7 @@ export const EXERCISE_ALIASES: Record<string, string> = {
   'close grip bench': 'Close Grip Bench Press',
   'barbell bench press': 'Barbell Bench Press',
   'barbell bench': 'Barbell Bench Press',
+  'flat barbell bench': 'Barbell Bench Press',
   'flat bench press': 'Flat Bench Press',
   'flat bench': 'Flat Bench Press',
   'bench press': 'Bench Press',
@@ -213,18 +220,122 @@ export const EXERCISE_ALIASES: Record<string, string> = {
   'walking lunges': 'Walking Lunges',
   'walking lunge': 'Walking Lunges',
   'pec deck': 'Pec Deck',
+  'peck deck': 'Pec Deck',
   'chest flyes': 'Chest Flyes',
   'chest flies': 'Chest Flyes',
   'chest fly': 'Chest Flyes',
+  'incline dumbbell flyes': 'Incline Dumbbell Flyes',
+  'incline dumbbell fly': 'Incline Dumbbell Flyes',
+  'incline dumbbell flies': 'Incline Dumbbell Flyes',
+  'incline flyes': 'Incline Dumbbell Flyes',
+  'incline flies': 'Incline Dumbbell Flyes',
+  'incline fly': 'Incline Dumbbell Flyes',
+  'dumbbell flyes': 'Chest Flyes',
+  'dumbbell fly': 'Chest Flyes',
+  'dumbbell flies': 'Chest Flyes',
+  'cable fly': 'Chest Flyes',
+  'cable flies': 'Chest Flyes',
+  'pec fly': 'Chest Flyes',
+  'pec flies': 'Chest Flyes',
+  'flys': 'Chest Flyes',
   'cable crossover': 'Cable Crossover',
   'push ups': 'Push Ups',
   'push up': 'Push Ups',
   'push-ups': 'Push Ups',
   'push-up': 'Push Ups',
+  'close grip push ups': 'Close Grip Push Up',
+  'close grip push up': 'Close Grip Push Up',
   'plank': 'Plank',
   'russian twists': 'Russian Twists',
   'hanging leg raises': 'Hanging Leg Raises',
+  'cable crunches': 'Cable Crunch',
+  'cable crunch': 'Cable Crunch',
+  'ab crunches': 'Ab Crunch',
+  'ab crunch': 'Ab Crunch',
+
+  // Additional High-Frequency Gym Movements
+  'cable curls': 'Cable Curl',
+  'cable curl': 'Cable Curl',
+  'barbell curls': 'Barbell Curl',
+  'barbell curl': 'Barbell Curl',
+  'ez bar curls': 'EZ Bar Curl',
+  'ez bar curl': 'EZ Bar Curl',
+  'ez bar bicep curl': 'EZ Bar Curl',
+  'ez curls': 'EZ Bar Curl',
+  'ez curl': 'EZ Bar Curl',
+  'incline hammer curls': 'Incline Hammer Curl',
+  'incline hammer curl': 'Incline Hammer Curl',
+  'rope pushdown': 'Tricep Pushdown',
+  'rope pushdowns': 'Tricep Pushdown',
+  'tricep rope pushdown': 'Tricep Pushdown',
+  'tricep rope pushdowns': 'Tricep Pushdown',
+  'overhead dumbbell extension': 'Overhead Tricep Extension',
+  'overhead dumbbell extensions': 'Overhead Tricep Extension',
+  'cable lateral raises': 'Lateral Raises',
+  'cable lateral raise': 'Lateral Raises',
+  'cable side raises': 'Lateral Raises',
+  'cable side raise': 'Lateral Raises',
+  'reverse pec deck': 'Reverse Pec Deck',
+  'rear delt flyes': 'Rear Delt Flyes',
+  'rear delt flies': 'Rear Delt Flyes',
+  'rear delt fly': 'Rear Delt Flyes',
+  'hamstring curls': 'Lying Leg Curl',
+  'hamstring curl': 'Lying Leg Curl',
+  'quad extensions': 'Leg Extension',
+  'quad extension': 'Leg Extension',
+  'seated calf raises': 'Calf Raises',
+  'seated calf raise': 'Calf Raises',
+  'standing calf raises': 'Calf Raises',
+  'standing calf raise': 'Calf Raises',
+  'hip thrusts': 'Hip Thrust',
+  'hip thrust': 'Hip Thrust',
+  'barbell hip thrusts': 'Hip Thrust',
+  'barbell hip thrust': 'Hip Thrust',
+  'glute bridge': 'Glute Bridge',
+  'glute bridges': 'Glute Bridge',
+  'farmers walk': 'Farmers Walk',
+  'farmer walk': 'Farmers Walk',
+  'farmers carry': 'Farmers Walk',
 };
+
+/**
+ * Fast Levenshtein distance calculation for phonetic and typo tolerance
+ */
+export function levenshteinDistance(a: string, b: string): number {
+  if (a === b) return 0;
+  if (!a.length) return b.length;
+  if (!b.length) return a.length;
+  const matrix: number[][] = [];
+  for (let i = 0; i <= b.length; i++) matrix[i] = [i];
+  for (let j = 0; j <= a.length; j++) matrix[0][j] = j;
+  for (let i = 1; i <= b.length; i++) {
+    for (let j = 1; j <= a.length; j++) {
+      if (b.charAt(i - 1) === a.charAt(j - 1)) {
+        matrix[i][j] = matrix[i - 1][j - 1];
+      } else {
+        matrix[i][j] = Math.min(
+          matrix[i - 1][j - 1] + 1, // substitution
+          matrix[i][j - 1] + 1,     // insertion
+          matrix[i - 1][j] + 1      // deletion
+        );
+      }
+    }
+  }
+  return matrix[b.length][a.length];
+}
+
+/**
+ * Normalized string similarity score between 0.0 (unrelated) and 1.0 (exact match)
+ */
+export function stringSimilarity(str1: string, str2: string): number {
+  const s1 = str1.trim().toLowerCase();
+  const s2 = str2.trim().toLowerCase();
+  if (s1 === s2) return 1.0;
+  const maxLen = Math.max(s1.length, s2.length);
+  if (maxLen === 0) return 1.0;
+  const dist = levenshteinDistance(s1, s2);
+  return 1.0 - dist / maxLen;
+}
 
 /**
  * Ordinal word mapping (e.g. second set -> 2)
@@ -243,7 +354,66 @@ const ORDINAL_MAP: Record<string, number> = {
 };
 
 /**
+ * Blacklist of units, fillers, numbers, and structural terms that can NEVER
+ * be treated as valid exercise candidate names.
+ */
+export const INVALID_EXERCISE_WORDS = new Set([
+  // Units & measurements
+  'kg', 'kgs', 'kilo', 'kilos', 'kilogram', 'kilograms',
+  'lb', 'lbs', 'pound', 'pounds',
+  'rep', 'reps', 'wrap', 'wraps', 'rip', 'rips', 'rap', 'raps', 'repetition', 'repetitions',
+  'sec', 'secs', 'second', 'seconds', 'min', 'mins', 'minute', 'minutes', 'hr', 'hrs', 'hour', 'hours',
+  'rpe', 'rir', 'percentage', 'percent',
+
+  // Set & workout structural terms
+  'set', 'sets', 'round', 'rounds', 'superset', 'supersets', 'dropset', 'dropsets',
+  'workout', 'exercise', 'exercises', 'routine', 'session', 'circuit', 'program',
+  'weight', 'weights', 'bodyweight',
+
+  // Conversational fillers, prepositions, numbers & verbs
+  'did', 'done', 'doing', 'do', 'completed', 'complete', 'got', 'hit', 'crushed',
+  'managed', 'pumped', 'banged', 'knocked', 'logged', 'log',
+  'same', 'next', 'previous', 'last', 'again', 'another', 'first', 'second', 'third',
+  'just', 'only', 'all', 'more', 'less', 'heavy', 'light', 'easy', 'hard',
+  'today', 'yesterday', 'now', 'ok', 'okay', 'yes', 'no', 'yeah', 'yup', 'nope',
+  'and', 'the', 'a', 'an', 'with', 'at', 'for', 'to', 'from', 'in', 'on', 'by', 'of',
+]);
+
+/**
+ * Validates whether a spoken candidate phrase is a plausible exercise name.
+ * Prevents unit tokens like "kgs", "lbs", or stray numbers from ever being
+ * classified or registered as exercise names.
+ */
+export function isValidExerciseCandidate(candidate?: string): boolean {
+  if (!candidate) return false;
+  const cleaned = candidate.trim().toLowerCase().replace(/[^\w\s-]/g, '');
+  if (cleaned.length < 3) return false;
+  // Reject pure numbers
+  if (/^\d+([.-]\d+)?$/.test(cleaned)) return false;
+
+  const tokens = cleaned.split(/\s+/).filter(Boolean);
+  if (tokens.length === 0) return false;
+
+  // Filter out invalid words and pure digits
+  const nonTrivialTokens = tokens.filter(
+    (t) => !INVALID_EXERCISE_WORDS.has(t) && !/^\d+$/.test(t)
+  );
+
+  // If every token was blacklisted or a number, reject
+  if (nonTrivialTokens.length === 0) return false;
+
+  // Single token must have at least 3 chars and cannot be in blacklist
+  if (tokens.length === 1 && INVALID_EXERCISE_WORDS.has(tokens[0])) {
+    return false;
+  }
+
+  return true;
+}
+
+/**
  * Normalizes numbers spoken as words to numeric digits.
+ * Extensively handles lifter slang, compound fractions ("two and a half"),
+ * phonetic mishearings ("keys" -> "kilos", "wraps" -> "reps"), and dumbbell pairs ("30s").
  */
 export function normalizeSpokenNumbers(text: string): string {
   const numberWords: Record<string, number> = {
@@ -258,16 +428,58 @@ export function normalizeSpokenNumbers(text: string): string {
   let str = text.toLowerCase()
     .replace(/kilo['’]?s\b/g, 'kilos')
     .replace(/rep['’]?s\b/g, 'reps')
-    .replace(/lb['’]?s\b/g, 'lbs')
-    .replace(/(\d+)\s*['’]s\b/g, '$1')
+    .replace(/lb['’]?s\b/g, 'lbs');
+
+  // Attached unit separation: "10kgs" -> "10 kg", "50lbs" -> "50 lbs", "10reps" -> "10 reps"
+  // Run this early so tokens like "10kgs" or "100lbs" cleanly tokenize digits and units
+  str = str
+    .replace(/(\d+(?:\.\d+)?)\s*(kgs?|kilos?|kilograms?)\b/gi, '$1 kg')
+    .replace(/(\d+(?:\.\d+)?)\s*(lbs?|pounds?)\b/gi, '$1 lbs')
+    .replace(/(\d+)\s*(reps?|wraps?|repetitions?)\b/gi, '$1 reps');
+
+  // Gerund verb stemming for gym exercises (e.g. "rowing" -> "row", "pressing" -> "press", "curling" -> "curl")
+  str = str
+    .replace(/\browing\b/gi, 'row')
+    .replace(/\bpressing\b/gi, 'press')
+    .replace(/\bcurling\b/gi, 'curl')
+    .replace(/\bsquatting\b/gi, 'squat')
+    .replace(/\bdeadlifting\b/gi, 'deadlift')
+    .replace(/\braising\b/gi, 'raise')
+    .replace(/\bpulling\b/gi, 'pull')
+    .replace(/\bflying\b/gi, 'fly')
+    .replace(/\bshrugging\b/gi, 'shrug')
+    .replace(/\blunging\b/gi, 'lunge')
+    .replace(/\bdipping\b/gi, 'dip');
+
+  // Fractions & decimals spoken before word-to-digit conversion
+  str = str
+    .replace(/\b(?:two|2)\s+and\s+a\s+half\b/g, '2.5')
+    .replace(/\b(?:three|3)\s+and\s+a\s+half\b/g, '3.5')
+    .replace(/\b(?:four|4)\s+and\s+a\s+half\b/g, '4.5')
+    .replace(/\b(?:five|5)\s+and\s+a\s+half\b/g, '5.5')
+    .replace(/\b(?:six|6)\s+and\s+a\s+half\b/g, '6.5')
+    .replace(/\b(?:seven|7)\s+and\s+a\s+half\b/g, '7.5')
+    .replace(/\b(?:eight|8)\s+and\s+a\s+half\b/g, '8.5')
+    .replace(/\b(?:nine|9)\s+and\s+a\s+half\b/g, '9.5')
+    .replace(/\b(?:ten|10)\s+and\s+a\s+half\b/g, '10.5')
+    .replace(/\b(?:twelve|12)\s+and\s+a\s+half\b/g, '12.5')
+    .replace(/\b(?:fifteen|15)\s+and\s+a\s+half\b/g, '15.5')
+    .replace(/\b(?:seventeen|17)\s+and\s+a\s+half\b/g, '17.5')
+    .replace(/\b(?:twenty|20)\s+and\s+a\s+half\b/g, '20.5')
+    .replace(/\b(?:twenty\s+two|22)\s+and\s+a\s+half\b/g, '22.5')
+    .replace(/\b(?:twenty\s+five|25)\s+and\s+a\s+half\b/g, '25.5')
+    .replace(/\b(?:one|1)\s+and\s+a\s+quarter\b/g, '1.25')
+    .replace(/\b(?:two|2)\s+and\s+a\s+quarter\b/g, '2.25')
     .replace(/\band\s+a\s+half\b/g, '.5')
     .replace(/\bpoint\s+five\b/g, '.5');
 
+  // Hundreds
   str = str.replace(/\bone\s+hundred(?:\s+and)?\s+(\w+)\b/g, (_, ones) => {
     const val = numberWords[ones];
     return val !== undefined ? String(100 + val) : '100 ' + ones;
   });
 
+  // Compound numbers like twenty five -> 25
   for (const [tens, tVal] of Object.entries({
     twenty: 20, thirty: 30, forty: 40, fifty: 50,
     sixty: 60, seventy: 70, eighty: 80, ninety: 90,
@@ -287,10 +499,40 @@ export function normalizeSpokenNumbers(text: string): string {
     }
   }
 
+  // Single number words to digits
   for (const [word, val] of Object.entries(numberWords)) {
     const reg = new RegExp(`\\b${word}\\b`, 'gi');
     str = str.replace(reg, String(val));
   }
+
+  // Decimal numbers like "7 .5" or "12 .5" or "7 point 5" -> "7.5"
+  str = str
+    .replace(/(\d+)\s*\.\s*5\b/g, '$1.5')
+    .replace(/(\d+)\s+point\s+(\d+)\b/g, '$1.$2');
+
+  // Dumbbell pairs notation: "30s" or "30's" -> "30"
+  str = str.replace(/(\d+)\s*['’]?s\b(?!\s*(?:rest|break|timer))/g, '$1');
+
+  // Phonetic unit normalization:
+  // "keys", "key", "k" after numbers -> kg
+  str = str
+    .replace(/\b(\d+(?:\.\d+)?)\s*(?:keys|key)\b/gi, '$1 kg')
+    .replace(/\b(\d+(?:\.\d+)?)\s*k\b/gi, '$1 kg')
+    .replace(/\b(\d+(?:\.\d+)?)\s*(?:points|bounce)\b/gi, '$1 lbs');
+
+  // Phonetic reps normalization:
+  // "wraps", "wrap", "rips", "rip", "raps", "rap" after numbers -> reps
+  str = str.replace(/\b(\d+)\s*(?:wraps?|rips?|raps?)\b/gi, '$1 reps');
+
+  // Slang action verbs for reps:
+  // "got 10", "hit 10", "crushed 10", "pumped out 10", "banged out 10", "knocked out 10", "managed 8"
+  str = str.replace(/\b(?:got|hit|crushed|pumped\s+out|banged\s+out|knocked\s+out|managed)\s+(\d+)\b/gi, 'did $1 reps');
+
+  // Secondary attached unit separation post word-to-digit conversion
+  str = str
+    .replace(/(\d+(?:\.\d+)?)\s*(kgs?|kilos?|kilograms?)\b/gi, '$1 kg')
+    .replace(/(\d+(?:\.\d+)?)\s*(lbs?|pounds?)\b/gi, '$1 lbs')
+    .replace(/(\d+)\s*(reps?|wraps?|repetitions?)\b/gi, '$1 reps');
 
   return str;
 }
@@ -390,7 +632,10 @@ export function parseWorkoutCommand(
   }
 
   // A) Finish workout command
-  if (/\b(?:finish|end|complete|done)\s+(?:workout|session)\b/i.test(working)) {
+  if (
+    /\b(?:finish|end|complete|done|stop)\s+(?:the\s+)?(?:workout|session)\b/i.test(working) ||
+    /\b(?:workout|session)\s+(?:is\s+)?(?:done|complete|finished)\b/i.test(working)
+  ) {
     return {
       type: 'FINISH_WORKOUT',
       rawTranscript: text,
@@ -398,8 +643,11 @@ export function parseWorkoutCommand(
   }
 
   // B) Set Done command (standalone without reps/weight logging)
-  const isSetDoneCommand = /\b(?:set\s+(?:done|finished|complete|completed)|done\s+set|finished\s+set)\b/i.test(working);
-  const hasNumbersOrReps = /\b\d+(\.\d+)?\b/.test(working) || /\b(?:reps?|repetitions?|kilos?|kg|lbs?|pounds?)\b/i.test(working);
+  const isSetDoneCommand =
+    /\b(?:set\s+(?:done|finished|complete|completed)|(?:done|finished|completed)\s+(?:with\s+)?(?:the\s+)?set|that\s+was\s+(?:my\s+)?set)\b/i.test(working);
+  const hasNumbersOrReps =
+    /\b\d+(\.\d+)?\b/.test(working) ||
+    /\b(?:reps?|repetitions?|kilos?|kg|lbs?|pounds?|wraps?|rips?)\b/i.test(working);
 
   if (isSetDoneCommand && !hasNumbersOrReps) {
     return {
@@ -416,10 +664,11 @@ export function parseWorkoutCommand(
     };
   }
 
-  // C-2) Rest timer command (e.g. "rest", "rest timer", "rest timer turn on", "turn on rest timer", "start rest", "rest 90 sec")
+  // C-2) Rest timer command (e.g. "rest", "rest timer", "rest timer turn on", "turn on rest timer", "start rest", "rest 90 sec", "give me 90 seconds")
   const isRestTimerCommand =
-    /^(?:rest|rest\s+timer|take\s+a\s+rest|start\s+rest(?:\s+timer)?|turn\s+on\s+rest(?:\s+timer)?|rest\s+timer\s+turn\s+on|rest\s+timer\s+on)(?:\s+(?:for\s+)?(\d+)\s*(?:s|sec|seconds?|min|minutes?)?)?$/i.test(working) ||
-    /^(?:turn\s+on|start|begin)\s+(?:the\s+)?rest\s*timer$/i.test(working);
+    /^(?:rest|rest\s+timer|take\s+a\s+rest|start\s+rest(?:\s+timer)?|turn\s+on\s+rest(?:\s+timer)?|rest\s+timer\s+turn\s+on|rest\s+timer\s+on|give\s+me\s+(?:a\s+)?rest|set\s+rest(?:\s+to)?|time\s+to\s+rest)(?:\s+(?:for\s+)?(\d+)\s*(?:s|sec|seconds?|min|minutes?)?)?$/i.test(working) ||
+    /^(?:turn\s+on|start|begin)\s+(?:the\s+)?rest\s*timer$/i.test(working) ||
+    /^(?:give\s+me|take)\s+(\d+)\s*(?:s|sec|seconds?|m|min|minutes?)(?:\s+rest)?$/i.test(working);
 
   if (isRestTimerCommand) {
     let parsedSeconds: number | undefined;
@@ -504,14 +753,102 @@ export function parseWorkoutCommand(
   const allAliasesMap: Record<string, string> = { ...EXERCISE_ALIASES, ...customAliases };
   const sortedAllAliases = Object.keys(allAliasesMap).sort((a, b) => b.length - a.length);
 
+  // Split aliases into multi-word and single-word groups
+  // This ensures compound phrases (e.g. "incline dumbell bench") match multi-word movements
+  // before a single isolated keyword (e.g. "bench") can accidentally truncate the phrase.
+  const multiWordAliases = sortedAllAliases.filter((a) => a.includes(' '));
+  const singleWordAliases = sortedAllAliases.filter((a) => !a.includes(' '));
+
   let detectedExercise: string | undefined;
 
-  for (const alias of sortedAllAliases) {
+  // 5a. Exact match on multi-word aliases (e.g. "bench press", "lat pulldown", "incline dumbbell bench")
+  for (const alias of multiWordAliases) {
     const regex = new RegExp(`\\b${alias}\\b`, 'i');
     if (regex.test(working)) {
       detectedExercise = allAliasesMap[alias];
       working = working.replace(regex, ' ');
       break;
+    }
+  }
+
+  // 5b. Multi-word fuzzy matching (phrase length 2 to 4 words)
+  // Catches typos and phonetic drops on compound movements (e.g. "incline dumbell bench", "lat puldown", "bench pres")
+  if (!detectedExercise) {
+    const words = working.split(/\s+/).filter(Boolean);
+    let bestScore = 0;
+    let bestMatchAlias = '';
+    let bestMatchedWords = '';
+
+    for (let len = Math.min(words.length, 4); len >= 2; len--) {
+      for (let start = 0; start <= words.length - len; start++) {
+        const candidatePhrase = words.slice(start, start + len).join(' ');
+        if (
+          /^\d+(\.\d+)?$/.test(candidatePhrase) ||
+          /^(?:did|done|set|sets|reps|kg|lbs|kilos|pounds|for|at|with|and|the|my)$/i.test(candidatePhrase)
+        ) {
+          continue;
+        }
+
+        for (const alias of multiWordAliases) {
+          const sim = stringSimilarity(candidatePhrase, alias);
+          if (sim >= 0.84 && sim > bestScore) {
+            bestScore = sim;
+            bestMatchAlias = alias;
+            bestMatchedWords = candidatePhrase;
+          }
+        }
+      }
+    }
+
+    if (bestMatchAlias && bestScore >= 0.84) {
+      detectedExercise = allAliasesMap[bestMatchAlias];
+      working = working.replace(new RegExp(`\\b${bestMatchedWords}\\b`, 'i'), ' ');
+    }
+  }
+
+  // 5c. Exact match on single-word aliases (e.g. "squat", "bench", "curls", "dips")
+  // Only match if not preceded by an unparsed modifier like "incline", "decline", "dumbbell"
+  if (!detectedExercise) {
+    for (const alias of singleWordAliases) {
+      const regex = new RegExp(`\\b${alias}\\b`, 'i');
+      if (regex.test(working)) {
+        if (alias === 'bench' && /\b(?:incline|decline|dumbbell|db|close\s*grip)\b/i.test(working)) {
+          continue;
+        }
+        detectedExercise = allAliasesMap[alias];
+        working = working.replace(regex, ' ');
+        break;
+      }
+    }
+  }
+
+  // 5d. Single-word fuzzy matching
+  if (!detectedExercise) {
+    const words = working.split(/\s+/).filter(Boolean);
+    let bestScore = 0;
+    let bestMatchAlias = '';
+    let bestMatchedWord = '';
+
+    for (const word of words) {
+      if (
+        /^\d+(\.\d+)?$/.test(word) ||
+        /^(?:did|done|set|sets|reps|kg|lbs|kilos|pounds|for|at|with|and|the|my)$/i.test(word)
+      ) {
+        continue;
+      }
+      for (const alias of singleWordAliases) {
+        const sim = stringSimilarity(word, alias);
+        if (sim >= 0.85 && sim > bestScore) {
+          bestScore = sim;
+          bestMatchAlias = alias;
+          bestMatchedWord = word;
+        }
+      }
+    }
+
+    if (bestMatchAlias && bestScore >= 0.85) {
+      detectedExercise = allAliasesMap[bestMatchAlias];
+      working = working.replace(new RegExp(`\\b${bestMatchedWord}\\b`, 'i'), ' ');
     }
   }
 
@@ -522,7 +859,7 @@ export function parseWorkoutCommand(
     );
     if (prefixExMatch && prefixExMatch[1].trim().length > 2) {
       const candidate = prefixExMatch[1].trim();
-      if (!/^(?:set|sets|reps|completed|workout|same|done|did)$/i.test(candidate)) {
+      if (isValidExerciseCandidate(candidate)) {
         detectedExercise = toTitleCase(candidate);
         working = working.replace(prefixExMatch[0], ' ');
       }
@@ -565,7 +902,7 @@ export function parseWorkoutCommand(
   }
 
   if (parsedWeight === undefined) {
-    const prepWeightMatch = working.match(/\b(?:at|with)\s+(\d+(?:\.\d+)?)\b/i);
+    const prepWeightMatch = working.match(/\b(?:at|with|using|on)\s+(\d+(?:\.\d+)?)\b/i);
     if (prepWeightMatch) {
       parsedWeight = parseFloat(prepWeightMatch[1]);
       working = working.replace(prepWeightMatch[0], ' ');
@@ -575,14 +912,14 @@ export function parseWorkoutCommand(
   // --- Step 7: Extract Repetitions ---
   let parsedReps: number | undefined;
 
-  const repsMatch = working.match(/(\d+)\s*(?:reps?|repetitions?)\b/i);
+  const repsMatch = working.match(/(\d+)\s*(?:reps?|repetitions?|wraps?|rips?|raps?)\b/i);
   if (repsMatch) {
     parsedReps = parseInt(repsMatch[1], 10);
     working = working.replace(repsMatch[0], ' ');
   }
 
   if (parsedReps === undefined) {
-    const didMatch = working.match(/\b(?:did|done|completed|for)\s+(\d+)\b/i);
+    const didMatch = working.match(/\b(?:did|done|completed|for|got|hit|crushed|managed)\s+(\d+)\b/i);
     if (didMatch) {
       parsedReps = parseInt(didMatch[1], 10);
       working = working.replace(didMatch[0], ' ');
@@ -644,8 +981,23 @@ export function parseWorkoutCommand(
       .replace(/\s+/g, ' ')
       .trim();
 
-    if (cleanedResidual.length >= 3 && !/^(?:set|sets|reps|same|workout)$/i.test(cleanedResidual)) {
-      detectedUnknownExercise = cleanedResidual;
+    if (isValidExerciseCandidate(cleanedResidual)) {
+      // Check if cleanedResidual is a close fuzzy match to any known alias
+      let fallbackMatch: string | undefined;
+      let maxSim = 0;
+      for (const alias of sortedAllAliases) {
+        const sim = stringSimilarity(cleanedResidual, alias);
+        if (sim >= 0.82 && sim > maxSim) {
+          maxSim = sim;
+          fallbackMatch = allAliasesMap[alias];
+        }
+      }
+
+      if (fallbackMatch) {
+        detectedExercise = fallbackMatch;
+      } else if (isValidExerciseCandidate(cleanedResidual)) {
+        detectedUnknownExercise = cleanedResidual;
+      }
     }
   }
 
@@ -668,7 +1020,7 @@ export function parseWorkoutCommand(
   }
 
   // 10b. Unknown exercise candidate detected! Trigger CONFIRM_EXERCISE prompt
-  if (detectedUnknownExercise) {
+  if (detectedUnknownExercise && isValidExerciseCandidate(detectedUnknownExercise)) {
     const suggested = toTitleCase(detectedUnknownExercise);
     const resolvedWeight = isSameWeight ? (lastKnownWeight > 0 ? lastKnownWeight : undefined) : parsedWeight;
 

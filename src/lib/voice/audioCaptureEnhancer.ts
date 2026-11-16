@@ -18,8 +18,12 @@ let activeMediaStream: MediaStream | null = null;
 
 /**
  * Pre-warms hardware DSP noise reduction on the user's microphone.
+ * Applies noiseSuppression, echoCancellation, autoGainControl and mono constraints
+ * tuned to athlete's microphoneSensitivity setting ('quiet' | 'standard' | 'aggressive').
  */
-export async function prewarmGymNoiseReduction(): Promise<AudioEnhancementState> {
+export async function prewarmGymNoiseReduction(
+  sensitivity: 'quiet' | 'standard' | 'aggressive' = 'aggressive'
+): Promise<AudioEnhancementState> {
   if (typeof window === 'undefined' || !navigator.mediaDevices?.getUserMedia) {
     return {
       isSupported: false,
@@ -45,20 +49,22 @@ export async function prewarmGymNoiseReduction(): Promise<AudioEnhancementState>
   }
 
   try {
+    const audioConstraints: MediaTrackConstraints = {
+      noiseSuppression: sensitivity !== 'quiet',
+      echoCancellation: true,
+      autoGainControl: true,
+      channelCount: sensitivity === 'aggressive' ? 1 : undefined,
+    };
+
     const stream = await navigator.mediaDevices.getUserMedia({
-      audio: {
-        noiseSuppression: true,
-        echoCancellation: true,
-        autoGainControl: true,
-        channelCount: 1, // Mono voice input reduces background stereo bleed
-      },
+      audio: audioConstraints,
     });
 
     const track = stream.getAudioTracks()[0];
     const settings = track?.getSettings() || {};
 
-    // Immediately release stream tracks so hardware microphone is not locked exclusively.
-    // Web Speech API (webkitSpeechRecognition) needs exclusive access to the microphone on Windows.
+    // Release stream tracks after pre-warming so the microphone device is not exclusively locked
+    // on operating systems that require shared audio device endpoints for Web Speech API.
     stream.getTracks().forEach((t) => {
       try {
         t.stop();

@@ -101,6 +101,7 @@ import { WorkoutReviewModal } from '@/components/workout/WorkoutReviewModal';
 import { getPreviousPerformanceForExercise } from '@/lib/history/previousPerformance';
 import { calculateEstimatedCalories } from '@/lib/analytics/metricsEngine';
 import { calculateSetVolume } from '@/lib/utils/unitConversion';
+import { recordVoiceAttempt } from '@/lib/voice/voiceTelemetry';
 
 export default function WorkoutPage() {
   const [activeWorkout, setActiveWorkout] = useState<Workout | null>(null);
@@ -952,7 +953,7 @@ export default function WorkoutPage() {
 
   // Continuous Voice Command Dispatcher
   const handleVoiceCommand = useCallback(
-    (finalTranscript: string) => {
+    (finalTranscript: string, alternatives: string[] = []) => {
       const now = Date.now();
       const cleanTranscript = finalTranscript.trim().toLowerCase();
 
@@ -977,7 +978,7 @@ export default function WorkoutPage() {
       const { exercise: currentEx, lastWeight } = getActiveExerciseContext();
 
       // Parse structured command with dynamic aliases and pending confirmation context
-      const command = parseWorkoutCommand(
+      let command = parseWorkoutCommand(
         finalTranscript,
         currentEx?.exerciseName,
         lastWeight,
@@ -985,6 +986,51 @@ export default function WorkoutPage() {
         customAliases,
         pendingConfirmation
       );
+      let effectiveTranscript = finalTranscript;
+
+      // Multi-Alternative Fallback Recovery:
+      // If primary recognition is ambiguous or triggers an unknown confirmation,
+      // inspect secondary alternatives for a confident action match!
+      if (
+        (command.type === 'AMBIGUOUS' || command.type === 'CONFIRM_EXERCISE') &&
+        alternatives &&
+        alternatives.length > 1
+      ) {
+        for (let altIdx = 0; altIdx < alternatives.length; altIdx++) {
+          const altText = alternatives[altIdx];
+          if (!altText || altText.toLowerCase().trim() === cleanTranscript) continue;
+
+          const altCommand = parseWorkoutCommand(
+            altText,
+            currentEx?.exerciseName,
+            lastWeight,
+            preferredUnit,
+            customAliases,
+            pendingConfirmation
+          );
+
+          const isDefiniteAction =
+            altCommand.type === 'ADD_SET' ||
+            altCommand.type === 'ADD_SET_CURRENT' ||
+            altCommand.type === 'SELECT_EXERCISE' ||
+            altCommand.type === 'START_REST' ||
+            altCommand.type === 'SET_DONE' ||
+            altCommand.type === 'START_SET' ||
+            altCommand.type === 'FINISH_WORKOUT' ||
+            altCommand.type === 'UNDO_LAST' ||
+            altCommand.type === 'RESOLVE_CONFIRMATION';
+
+          if (isDefiniteAction) {
+            console.info(
+              `[Voice Engine] Recovered command via Speech Alternative #${altIdx + 1}: "${altText}" ->`,
+              altCommand.type
+            );
+            command = altCommand;
+            effectiveTranscript = altText;
+            break;
+          }
+        }
+      }
 
       console.log('Voice Command Received:', command);
 
@@ -1076,7 +1122,8 @@ export default function WorkoutPage() {
         const newW = handleStartWorkout(title);
         currentWorkout = newW;
         if (!isListeningDesired) {
-          prewarmGymNoiseReduction().catch(() => {});
+          const prof = getStoredProfile();
+          prewarmGymNoiseReduction(prof.microphoneSensitivity || 'aggressive').catch(() => {});
           startContinuousListening();
         }
         setSaveStatus({
@@ -1141,11 +1188,21 @@ export default function WorkoutPage() {
       }
 
       if (command.type === 'UNDO_LAST') {
+        recordVoiceAttempt({
+          rawTranscript: finalTranscript,
+          outcome: 'correction_needed',
+          reason: 'User issued undo command',
+        });
         handleUndoLast();
         return;
       }
 
       if (command.type === 'MODIFY_LAST') {
+        recordVoiceAttempt({
+          rawTranscript: finalTranscript,
+          outcome: 'correction_needed',
+          reason: 'User issued modify command',
+        });
         handleModifyLast(command);
         return;
       }
@@ -1176,6 +1233,12 @@ export default function WorkoutPage() {
         });
 
         if (clarificationNeeded) {
+          recordVoiceAttempt({
+            rawTranscript: finalTranscript,
+            outcome: 'clarification_required',
+            exerciseName: clarificationNeeded.exerciseName || clarificationNeeded.suggestedExercise,
+            reason: clarificationNeeded.questionPrompt,
+          });
           setClarificationState(clarificationNeeded);
           playSoundChime();
           setSaveStatus({ type: 'info', message: clarificationNeeded.questionPrompt });
@@ -1258,6 +1321,11 @@ export default function WorkoutPage() {
         }
 
         case 'SELECT_EXERCISE': {
+          recordVoiceAttempt({
+            rawTranscript: finalTranscript,
+            outcome: 'clean_success',
+            exerciseName: command.exercise,
+          });
           // Switch or create exercise without inventing sets
           const existing = currentWorkout.exercises.find(
             (e) => e.exerciseName.toLowerCase() === command.exercise.toLowerCase()
@@ -1293,6 +1361,12 @@ export default function WorkoutPage() {
         }
 
         case 'ADD_SET': {
+          recordVoiceAttempt({
+            rawTranscript: finalTranscript,
+            outcome: 'clean_success',
+            exerciseName: command.exercise,
+          });
+
           if (command.weight === undefined || command.reps === undefined) {
             setSaveStatus({
               type: 'info',
@@ -1429,6 +1503,11 @@ export default function WorkoutPage() {
           }
 
           if (!targetEx) {
+            recordVoiceAttempt({
+              rawTranscript: command.rawTranscript,
+              outcome: 'ambiguous',
+              reason: 'No active exercise selected to attach this set to',
+            });
             // No current exercise to attach to
             setAmbiguousCommand({
               type: 'AMBIGUOUS',
@@ -1440,6 +1519,12 @@ export default function WorkoutPage() {
             });
             return;
           }
+
+          recordVoiceAttempt({
+            rawTranscript: finalTranscript,
+            outcome: 'clean_success',
+            exerciseName: targetEx.exerciseName,
+          });
 
           const previousWeight = targetEx.sets.length > 0 ? targetEx.sets[targetEx.sets.length - 1].weight : 40;
           const finalWeight = command.weight !== undefined ? command.weight : previousWeight;
@@ -1531,6 +1616,12 @@ export default function WorkoutPage() {
         }
 
         case 'CONFIRM_EXERCISE': {
+          recordVoiceAttempt({
+            rawTranscript: finalTranscript,
+            outcome: 'clarification_required',
+            exerciseName: command.suggestedExercise,
+            reason: `Did you say "${command.suggestedExercise}"?`,
+          });
           setPendingConfirmation(command);
           setShowManualCorrection(false);
           playSoundChime();
@@ -1567,6 +1658,11 @@ export default function WorkoutPage() {
         }
 
         case 'AMBIGUOUS': {
+          recordVoiceAttempt({
+            rawTranscript: finalTranscript,
+            outcome: 'ambiguous',
+            reason: command.reason,
+          });
           setAmbiguousCommand(command);
           break;
         }
@@ -1617,7 +1713,8 @@ export default function WorkoutPage() {
       if (!activeWorkout) {
         handleStartWorkout('Voice Workout');
       }
-      prewarmGymNoiseReduction().catch(() => {});
+      const prof = getStoredProfile();
+      prewarmGymNoiseReduction(prof.microphoneSensitivity || 'aggressive').catch(() => {});
       startContinuousListening();
       setSaveStatus({ type: 'info', message: 'Continuous listening active. Speak anytime.' });
     }
