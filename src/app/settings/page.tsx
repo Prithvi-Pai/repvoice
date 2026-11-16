@@ -23,9 +23,15 @@ import {
   Sliders,
   Timer,
   Sparkles,
+  Download,
+  CreditCard,
+  Crown,
+  FileSpreadsheet,
+  FileCode,
 } from 'lucide-react';
 import { getSupabaseConfig, getSupabaseClient } from '@/lib/supabase/client';
-import { getStoredProfile, saveStoredProfile } from '@/lib/storage';
+import { getStoredProfile, saveStoredProfile, getWorkoutHistory } from '@/lib/storage';
+import { downloadWorkoutsCSV, downloadWorkoutsJSON } from '@/lib/export/csvExport';
 import { UserProfile, WeightUnit } from '@/types';
 import { BottomNav } from '@/components/layout/BottomNav';
 import { playAcousticChime, speakVoiceConfirmation } from '@/lib/voice/audioFeedback';
@@ -52,6 +58,25 @@ export default function SettingsPage() {
   const [speechSupport, setSpeechSupport] = useState<boolean>(false);
   const [micTesting, setMicTesting] = useState<boolean>(false);
   const [micTestText, setMicTestText] = useState<string>('');
+  const [exportNotice, setExportNotice] = useState<string | null>(null);
+
+  const handleExportCSV = async () => {
+    const history = await getWorkoutHistory();
+    const result = downloadWorkoutsCSV(history.workouts || []);
+    if (result.success) {
+      setExportNotice(`Exported ${result.count} workouts to ${result.filename}`);
+      setTimeout(() => setExportNotice(null), 3500);
+    }
+  };
+
+  const handleExportJSON = async () => {
+    const history = await getWorkoutHistory();
+    const result = downloadWorkoutsJSON(history.workouts || []);
+    if (result.success) {
+      setExportNotice(`Exported JSON data (${result.count} workouts)`);
+      setTimeout(() => setExportNotice(null), 3500);
+    }
+  };
 
   useEffect(() => {
     const loaded = getStoredProfile();
@@ -448,6 +473,99 @@ export default function SettingsPage() {
             Neutral
           </button>
         </div>
+      </div>
+
+      {/* CSV Data Export Card */}
+      <div id="export" className="p-4 rounded-2xl bg-zinc-950 border border-zinc-800 space-y-3 shadow-lg">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2 text-white font-bold text-sm">
+            <FileSpreadsheet className="h-4 w-4 text-zinc-300" />
+            <span>CSV Data Export</span>
+          </div>
+          <span className="text-[10px] font-bold text-zinc-300 bg-zinc-800 px-2 py-0.5 rounded-full uppercase border border-zinc-700">
+            Export
+          </span>
+        </div>
+
+        <p className="text-xs text-zinc-400 leading-relaxed">
+          Export your entire workout catalog, individual sets, loads, repetitions, and classified muscle groups to standard RFC-compliant CSV or structured JSON.
+        </p>
+
+        {exportNotice && (
+          <div className="p-2.5 rounded-xl bg-zinc-900 border border-zinc-700 text-xs text-white flex items-center gap-2">
+            <Check className="h-3.5 w-3.5 text-white shrink-0" />
+            <span>{exportNotice}</span>
+          </div>
+        )}
+
+        <div className="grid grid-cols-2 gap-2.5">
+          <button
+            onClick={handleExportCSV}
+            className="py-2.5 px-3 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-white text-xs font-bold border border-zinc-750 flex items-center justify-center gap-2 transition cursor-pointer"
+          >
+            <Download className="h-3.5 w-3.5 text-white" />
+            <span>Download CSV</span>
+          </button>
+
+          <button
+            onClick={handleExportJSON}
+            className="py-2.5 px-3 rounded-xl bg-zinc-900 hover:bg-zinc-800 text-zinc-300 hover:text-white text-xs font-bold border border-zinc-800 flex items-center justify-center gap-2 transition cursor-pointer"
+          >
+            <FileCode className="h-3.5 w-3.5 text-zinc-400" />
+            <span>Download JSON</span>
+          </button>
+        </div>
+      </div>
+
+      {/* Subscription Management Card */}
+      <div id="subscription" className="p-4 rounded-2xl bg-zinc-950 border border-zinc-800 space-y-3 shadow-lg">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2 text-white font-bold text-sm">
+            <Crown className="h-4 w-4 text-white" />
+            <span>Subscription Management</span>
+          </div>
+          <span className="text-[10px] font-black text-black bg-white px-2 py-0.5 rounded-full uppercase tracking-wider">
+            Pro Active
+          </span>
+        </div>
+
+        <p className="text-xs text-zinc-400">
+          Your athlete account is unlocked with full access to RepVoice intelligence and hands-free logging capabilities.
+        </p>
+
+        <div className="p-3 rounded-xl bg-black border border-zinc-850 space-y-2 text-xs">
+          <div className="flex items-center gap-2 text-zinc-300">
+            <Check className="h-3.5 w-3.5 text-white shrink-0" />
+            <span>Continuous Voice Recognition with Audio Gate DSP</span>
+          </div>
+          <div className="flex items-center gap-2 text-zinc-300">
+            <Check className="h-3.5 w-3.5 text-white shrink-0" />
+            <span>Real-time Waveform & Ambient Noise Measurement</span>
+          </div>
+          <div className="flex items-center gap-2 text-zinc-300">
+            <Check className="h-3.5 w-3.5 text-white shrink-0" />
+            <span>Adaptive Continuous Exercise Learning & Aliases</span>
+          </div>
+          <div className="flex items-center gap-2 text-zinc-300">
+            <Check className="h-3.5 w-3.5 text-white shrink-0" />
+            <span>Gender Anatomical Heatmap & Progressive Overload Proof</span>
+          </div>
+          <div className="flex items-center gap-2 text-zinc-300">
+            <Check className="h-3.5 w-3.5 text-white shrink-0" />
+            <span>Encrypted Cloud Database Sync across Devices</span>
+          </div>
+        </div>
+
+        <button
+          onClick={() => {
+            setExportNotice('RepVoice Athlete Pro is active on your profile.');
+            setTimeout(() => setExportNotice(null), 3000);
+          }}
+          className="w-full py-2.5 rounded-xl bg-zinc-850 hover:bg-zinc-800 text-xs font-bold text-zinc-200 border border-zinc-750 flex items-center justify-center gap-2 transition cursor-pointer"
+        >
+          <CreditCard className="h-3.5 w-3.5 text-zinc-400" />
+          <span>Manage Subscription & Billing</span>
+        </button>
       </div>
 
       {/* Supabase Connection Test */}

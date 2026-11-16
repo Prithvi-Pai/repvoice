@@ -78,6 +78,21 @@ export async function saveCustomExerciseMuscle(
 }
 
 /**
+ * Removes a custom exercise muscle group classification.
+ */
+export function deleteCustomExerciseMuscle(exerciseName: string): void {
+  const norm = exerciseName.toLowerCase().trim();
+  if (!norm || typeof window === 'undefined') return;
+  try {
+    const current = getCustomExerciseMuscles();
+    delete current[norm];
+    localStorage.setItem(LOCAL_STORAGE_CUSTOM_MUSCLES_KEY, JSON.stringify(current));
+  } catch (e) {
+    console.warn('Failed to delete custom muscle group locally:', e);
+  }
+}
+
+/**
  * Checks whether an exercise's muscle group is known (either in catalogue or learned from user).
  * Returns isKnown = false if this is an unrecognized custom name needing athlete input.
  */

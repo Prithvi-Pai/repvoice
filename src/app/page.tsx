@@ -28,6 +28,7 @@ import {
   Calendar,
   StopCircle,
   RefreshCw,
+  TrendingUp,
 } from 'lucide-react';
 import {
   Workout,
@@ -86,8 +87,6 @@ import {
   releaseGymNoiseReduction,
 } from '@/lib/voice/audioCaptureEnhancer';
 import { GymAudioIntelligence } from '@/components/audio/GymAudioIntelligence';
-import { ProgressiveOverloadSection } from '@/components/home/ProgressiveOverloadSection';
-import { MuscleDistributionSection } from '@/components/home/MuscleDistributionSection';
 import { MuscleGroupPromptModal } from '@/components/workout/MuscleGroupPromptModal';
 import {
   identifyExerciseMuscleGroup,
@@ -2262,18 +2261,32 @@ export default function WorkoutPage() {
           {/* Gym Audio Intelligence Feature */}
           <GymAudioIntelligence />
 
-          {/* Progressive Overload & Strength Benchmarks */}
-          <ProgressiveOverloadSection
-            workoutHistory={workoutHistory}
-            preferredUnit={preferredUnit}
-          />
-
-          {/* Muscle Group Distribution & Anatomical Silhouette Heatmap */}
-          <MuscleDistributionSection
-            workoutHistory={workoutHistory}
-            gender={userGender}
-            preferredUnit={preferredUnit}
-          />
+          {/* Training Insights & Anatomical Heatmap Banner */}
+          <Link
+            href="/insights"
+            className="p-4 rounded-3xl bg-zinc-950 border border-zinc-800 hover:border-zinc-700 transition flex items-center justify-between group shadow-lg"
+          >
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-2xl bg-zinc-900 border border-zinc-800 flex items-center justify-center text-white group-hover:scale-105 transition">
+                <TrendingUp className="h-5 w-5" />
+              </div>
+              <div>
+                <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-400 block mb-0.5">
+                  Intelligence Hub
+                </span>
+                <h3 className="text-sm font-extrabold text-white flex items-center gap-1.5">
+                  <span>Training Insights & Heatmap</span>
+                  <Sparkles className="h-3 w-3 text-white" />
+                </h3>
+                <p className="text-[11px] text-zinc-400 mt-0.5">
+                  Progressive overload benchmarks, gender heatmap, and muscle learning
+                </p>
+              </div>
+            </div>
+            <div className="w-8 h-8 rounded-full bg-zinc-900 flex items-center justify-center text-zinc-400 group-hover:text-white group-hover:bg-zinc-800 transition shrink-0 ml-2">
+              <ChevronRight className="h-4 w-4" />
+            </div>
+          </Link>
 
           {/* Recent Activity Snippet */}
           {lastWorkout && (
