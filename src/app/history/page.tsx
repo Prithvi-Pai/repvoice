@@ -21,6 +21,7 @@ import {
   Pencil,
   Check,
   Play,
+  Mic,
 } from 'lucide-react';
 import { Workout, WorkoutExercise } from '@/types';
 import {
@@ -471,6 +472,16 @@ export default function HistoryPage() {
     const isExpanded = expandedWorkoutId === workout.id;
     const volume = getWorkoutVolume(workout);
     const totalSets = workout.exercises.reduce((sum, ex) => sum + ex.sets.length, 0);
+    const completedSets = workout.exercises.reduce(
+      (sum, ex) => sum + ex.sets.filter((s) => s.isCompleted !== false).length,
+      0
+    );
+    const voiceSets = workout.exercises.reduce(
+      (sum, ex) =>
+        sum + ex.sets.filter((s) => s.isCompleted !== false && s.isVoiceLogged !== false).length,
+      0
+    );
+    const voicePercent = completedSets > 0 ? Math.round((voiceSets / completedSets) * 100) : 100;
     const { todayKey } = getTodayAndYesterdayKeys();
     const isToday = getLocalDateKey(workout.startedAt || workout.completedAt || new Date()) === todayKey;
 
@@ -628,7 +639,7 @@ export default function HistoryPage() {
           </div>
 
           {/* Summary Metrics Pill Bar */}
-          <div className="flex items-center gap-3 mt-3 text-xs text-zinc-300">
+          <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1.5 mt-3 text-xs text-zinc-300">
             <span className="flex items-center gap-1">
               <Clock className="h-3.5 w-3.5 text-zinc-400" />
               {getDurationText(workout)}
@@ -642,6 +653,14 @@ export default function HistoryPage() {
             <span>{workout.exercises.length} exercises</span>
             <span>•</span>
             <span>{totalSets} sets</span>
+            <span>•</span>
+            <span
+              className="flex items-center gap-1 font-semibold text-zinc-200 bg-zinc-950/80 px-2 py-0.5 rounded-md border border-zinc-800 text-[11px]"
+              title={`${voiceSets} of ${completedSets || totalSets} sets logged hands-free`}
+            >
+              <Mic className="h-3 w-3 text-zinc-400" />
+              {voicePercent}% voice sync
+            </span>
           </div>
 
           {/* Notes if provided */}

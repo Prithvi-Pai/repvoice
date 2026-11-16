@@ -18,6 +18,7 @@ import { getWorkoutHistory, getStoredProfile, getActiveWorkout } from '@/lib/sto
 import { ProgressiveOverloadSection } from '@/components/home/ProgressiveOverloadSection';
 import { MuscleDistributionSection } from '@/components/home/MuscleDistributionSection';
 import { ContinuousLearningSection } from '@/components/insights/ContinuousLearningSection';
+import { AcousticIntelligenceSection } from '@/components/insights/AcousticIntelligenceSection';
 import { BottomNav } from '@/components/layout/BottomNav';
 import { calculateSetVolume } from '@/lib/utils/unitConversion';
 
@@ -25,7 +26,7 @@ export default function InsightsPage() {
   const [workoutHistory, setWorkoutHistory] = useState<Workout[]>([]);
   const [userGender, setUserGender] = useState<Gender>('male');
   const [preferredUnit, setPreferredUnit] = useState<WeightUnit>('kg');
-  const [activeTab, setActiveTab] = useState<'all' | 'overload' | 'heatmap' | 'learning'>('all');
+  const [activeTab, setActiveTab] = useState<'all' | 'overload' | 'heatmap' | 'learning' | 'acoustic'>('all');
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
@@ -167,6 +168,14 @@ export default function InsightsPage() {
         >
           Disambiguation & Learning
         </button>
+        <button
+          onClick={() => setActiveTab('acoustic')}
+          className={`px-3 py-1.5 rounded-xl transition cursor-pointer shrink-0 ${
+            activeTab === 'acoustic' ? 'bg-white text-black font-extrabold shadow-sm' : 'text-zinc-400 hover:text-white'
+          }`}
+        >
+          Acoustic Intelligence
+        </button>
       </div>
 
       {/* Section 1: Progressive Overload & Benchmarks */}
@@ -194,6 +203,16 @@ export default function InsightsPage() {
       {(activeTab === 'all' || activeTab === 'learning') && (
         <div className="space-y-2">
           <ContinuousLearningSection />
+        </div>
+      )}
+
+      {/* Section 4: Acoustic Intelligence & Accuracy Trend */}
+      {(activeTab === 'all' || activeTab === 'acoustic') && (
+        <div className="space-y-2">
+          <AcousticIntelligenceSection
+            workoutHistory={workoutHistory}
+            preferredUnit={preferredUnit}
+          />
         </div>
       )}
 
