@@ -131,11 +131,8 @@ export function MuscleDistributionSection({
           <span className="text-[10px] font-black uppercase tracking-widest text-zinc-400 block mb-0.5">
             PHYSIQUE & SYMMETRY
           </span>
-          <h2 className="text-xl font-black text-white tracking-tight flex items-center gap-2">
-            <span>Muscle Group Distribution</span>
-            <span className="text-[10px] font-bold text-zinc-300 bg-zinc-900 border border-zinc-800 px-2.5 py-0.5 rounded-full">
-              {gender === 'female' ? 'Female Model' : 'Male Model'}
-            </span>
+          <h2 className="text-xl font-black text-white tracking-tight">
+            Muscle Group Distribution
           </h2>
         </div>
 

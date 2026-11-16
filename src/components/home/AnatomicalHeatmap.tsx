@@ -51,38 +51,46 @@ export function AnatomicalHeatmap({
 
   return (
     <div className="rounded-3xl bg-zinc-950 border border-zinc-800 p-4 space-y-3.5 shadow-lg">
-      {/* Header & View Toggle */}
+      {/* Header */}
       <div className="flex items-center justify-between">
         <div>
           <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-400 block mb-0.5">
-            Anatomical Heatmap
+            Anatomy Breakdown
           </span>
-          <h3 className="text-sm font-extrabold text-white flex items-center gap-1.5">
-            <span>{isFemale ? 'Female Physique' : 'Male Physique'}</span>
-            <span className="text-[10px] font-semibold text-zinc-400 bg-zinc-900 px-2 py-0.5 rounded-full border border-zinc-800">
-              {view === 'front' ? 'Anterior' : 'Posterior'}
-            </span>
+          <h3 className="text-sm font-extrabold text-white">
+            Anatomical Heatmap
           </h3>
         </div>
+      </div>
 
-        <div className="flex p-0.5 rounded-xl bg-zinc-900 border border-zinc-800 text-[11px] font-bold">
-          <button
-            onClick={() => setView('front')}
-            className={`px-3 py-1 rounded-lg transition cursor-pointer ${
-              view === 'front' ? 'bg-white text-black shadow-sm font-black' : 'text-zinc-400 hover:text-white'
-            }`}
-          >
-            Front
-          </button>
-          <button
-            onClick={() => setView('back')}
-            className={`px-3 py-1 rounded-lg transition cursor-pointer ${
-              view === 'back' ? 'bg-white text-black shadow-sm font-black' : 'text-zinc-400 hover:text-white'
-            }`}
-          >
-            Back
-          </button>
-        </div>
+      {/* Full-Width Front & Back Toggle directly above the Anatomy */}
+      <div className="w-full grid grid-cols-2 p-1 rounded-2xl bg-zinc-900 border border-zinc-800 text-xs font-extrabold">
+        <button
+          onClick={() => setView('front')}
+          className={`w-full py-2.5 rounded-xl transition cursor-pointer flex items-center justify-center gap-1.5 ${
+            view === 'front'
+              ? 'bg-white text-black font-black shadow-md'
+              : 'text-zinc-400 hover:text-white'
+          }`}
+        >
+          <span>Front</span>
+          <span className={`text-[10px] font-semibold ${view === 'front' ? 'text-zinc-700' : 'text-zinc-500'}`}>
+            (Anterior)
+          </span>
+        </button>
+        <button
+          onClick={() => setView('back')}
+          className={`w-full py-2.5 rounded-xl transition cursor-pointer flex items-center justify-center gap-1.5 ${
+            view === 'back'
+              ? 'bg-white text-black font-black shadow-md'
+              : 'text-zinc-400 hover:text-white'
+          }`}
+        >
+          <span>Back</span>
+          <span className={`text-[10px] font-semibold ${view === 'back' ? 'text-zinc-700' : 'text-zinc-500'}`}>
+            (Posterior)
+          </span>
+        </button>
       </div>
 
       {/* SVG Canvas & Heatmap Silhouette */}
