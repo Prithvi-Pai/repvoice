@@ -485,3 +485,93 @@ export async function updateWorkoutTitle(workoutId: string, newTitle: string): P
 
   return true;
 }
+
+/**
+ * Updates a full workout record (exercises, sets, volume) in both Supabase and localStorage.
+ */
+export async function updateWorkoutInHistory(updatedWorkout: Workout): Promise<SaveWorkoutResult> {
+  // Recalculate metrics
+  let totalVolume = 0;
+  let totalSets = 0;
+  for (const ex of updatedWorkout.exercises) {
+    for (const s of ex.sets) {
+      if (s.isCompleted !== false) {
+        totalSets++;
+        totalVolume += (Number(s.weight) || 0) * (Number(s.reps) || 0);
+      }
+    }
+  }
+
+  const finished: Workout = {
+    ...updatedWorkout,
+    totalVolume: Math.round(totalVolume),
+    totalSets,
+  };
+
+  const client = getSupabaseClient();
+  let savedToSupabase = false;
+
+  if (client) {
+    try {
+      const { data: { user } } = await client.auth.getUser();
+      if (user) {
+        // 1. Update workout row
+        await client
+          .from('workouts')
+          .update({
+            title: finished.title,
+            notes: finished.notes || null,
+            total_volume: finished.totalVolume,
+            total_sets: finished.totalSets,
+          })
+          .eq('id', finished.id);
+
+        // 2. Refresh exercises & sets in Supabase
+        await client.from('workout_exercises').delete().eq('workout_id', finished.id);
+
+        for (let i = 0; i < finished.exercises.length; i++) {
+          const ex = finished.exercises[i];
+          const exId = isValidUUID(ex.id) ? ex.id : generateUUID();
+          const { data: exRow, error: exErr } = await client
+            .from('workout_exercises')
+            .insert({
+              id: exId,
+              workout_id: finished.id,
+              exercise_name: ex.exerciseName || 'Exercise',
+              order_index: i,
+            })
+            .select()
+            .single();
+
+          if (!exErr && exRow && ex.sets.length > 0) {
+            const setRows = ex.sets.map((s, idx) => ({
+              id: isValidUUID(s.id) ? s.id : generateUUID(),
+              workout_exercise_id: exRow.id,
+              set_number: s.setNumber || idx + 1,
+              weight: Number(s.weight) || 0,
+              reps: Number(s.reps) || 0,
+              unit: s.unit || 'kg',
+              is_completed: s.isCompleted ?? true,
+            }));
+            await client.from('workout_sets').insert(setRows);
+          }
+        }
+        savedToSupabase = true;
+      }
+    } catch (err) {
+      console.error('Failed to update workout in Supabase:', err);
+    }
+  }
+
+  // Update in localStorage
+  if (typeof window !== 'undefined') {
+    const local = getLocalWorkoutHistory();
+    const updated = local.map((w) => (w.id === finished.id ? finished : w));
+    localStorage.setItem(LOCAL_STORAGE_HISTORY, JSON.stringify(updated));
+  }
+
+  return {
+    success: true,
+    persistedTo: savedToSupabase ? 'supabase' : 'local_fallback',
+  };
+}

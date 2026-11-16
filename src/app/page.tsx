@@ -1707,6 +1707,18 @@ export default function WorkoutPage() {
 
     const cleanTitle = toTitleCase(trimmed);
     const targetEx = currentW.exercises[exerciseIndex];
+    const previousName = targetEx.exerciseName;
+
+    // Immediately teach the voice recognizer this custom correction for continuous learning
+    if (previousName.toLowerCase().trim() !== cleanTitle.toLowerCase().trim()) {
+      setCustomAliases((prev) => ({
+        ...prev,
+        [previousName.toLowerCase().trim()]: cleanTitle,
+      }));
+      saveLearnedAlias(previousName, cleanTitle).catch((err) =>
+        console.info('Learned alias save notice:', err)
+      );
+    }
 
     // Check if another exercise in the current session matches the corrected name (using canonical matcher)
     const matchingIdx = currentW.exercises.findIndex(
