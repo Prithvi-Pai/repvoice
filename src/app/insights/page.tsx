@@ -206,7 +206,7 @@ export default function InsightsPage() {
         </div>
       )}
 
-      {/* Section 4: Acoustic Intelligence & Accuracy Trend */}
+      {/* Section 4: Acoustic Intelligence & Accuracy */}
       {(activeTab === 'all' || activeTab === 'acoustic') && (
         <div className="space-y-2">
           <AcousticIntelligenceSection
