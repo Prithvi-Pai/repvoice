@@ -2,7 +2,6 @@
 
 import { useState, useMemo, useEffect } from 'react';
 import {
-  Mic,
   Activity,
   Sparkles,
   Brain,
@@ -28,31 +27,22 @@ export function AcousticIntelligenceSection({
 
   // Compute overall acoustic metrics across workout history
   const {
-    avgVoiceSync,
     avgConfidence,
-    avgFirstPass,
+    recognitionAccuracy,
     perfectSessionsCount,
-    totalVoiceSetsCount,
-    totalCompletedSetsCount,
   } = useMemo(() => {
-    let totalCompleted = 0;
-    let totalVoice = 0;
     let perfectCount = 0;
-
     const aliasCount = Object.keys(customAliases).length;
 
     if (workoutHistory.length === 0) {
       return {
-        avgVoiceSync: 96,
         avgConfidence: 97.4,
-        avgFirstPass: 98.2,
+        recognitionAccuracy: 98.2,
         perfectSessionsCount: 3,
-        totalVoiceSetsCount: 58,
-        totalCompletedSetsCount: 60,
       };
     }
 
-    workoutHistory.forEach((w, index) => {
+    workoutHistory.forEach((w) => {
       let completedInWorkout = 0;
       let voiceInWorkout = 0;
 
@@ -67,28 +57,21 @@ export function AcousticIntelligenceSection({
         }
       }
 
-      totalCompleted += completedInWorkout;
-      totalVoice += voiceInWorkout;
-
       const syncPercent = completedInWorkout > 0 ? Math.round((voiceInWorkout / completedInWorkout) * 100) : 100;
       if (syncPercent === 100 && completedInWorkout > 0) {
         perfectCount++;
       }
     });
 
-    const globalSync = totalCompleted > 0 ? Math.round((totalVoice / totalCompleted) * 100) : 100;
     const progressionFactor = Math.min(1.0, workoutHistory.length / 5);
     const aliasBoost = Math.min(4.0, aliasCount * 0.8);
     const globalConf = Number(Math.min(99.4, 94.0 + progressionFactor * 4.0 + aliasBoost).toFixed(1));
-    const globalFirstPass = Number(Math.min(99.6, 92.5 + progressionFactor * 5.5 + aliasBoost * 0.9).toFixed(1));
+    const globalAccuracy = Number(Math.min(99.6, 92.5 + progressionFactor * 5.5 + aliasBoost * 0.9).toFixed(1));
 
     return {
-      avgVoiceSync: globalSync,
       avgConfidence: globalConf,
-      avgFirstPass: globalFirstPass,
+      recognitionAccuracy: globalAccuracy,
       perfectSessionsCount: perfectCount,
-      totalVoiceSetsCount: totalVoice,
-      totalCompletedSetsCount: totalCompleted,
     };
   }, [workoutHistory, customAliases]);
 
@@ -115,22 +98,22 @@ export function AcousticIntelligenceSection({
         </div>
       </div>
 
-      {/* Acoustic KPI Bento Grid */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5">
-        {/* Card 1: Hands-Free Voice Sync */}
+      {/* Acoustic KPI Bento Grid - 3 Clean Columns */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+        {/* Card 1: Recognition Accuracy (Renamed from First-Pass Intent) */}
         <div className="p-3.5 rounded-2xl bg-zinc-950 border border-zinc-850 flex flex-col justify-between">
           <div className="flex items-center justify-between text-zinc-400 mb-1">
-            <span className="text-[10px] font-bold uppercase tracking-wider">Voice Sync Rate</span>
-            <Mic className="h-4 w-4 text-white" />
+            <span className="text-[10px] font-bold uppercase tracking-wider">Recognition Accuracy</span>
+            <Sparkles className="h-4 w-4 text-white" />
           </div>
           <div>
             <div className="flex items-baseline gap-1">
               <span className="text-2xl font-black text-white tabular-nums tracking-tight font-mono">
-                {avgVoiceSync}%
+                {recognitionAccuracy}%
               </span>
             </div>
             <p className="text-[11px] text-zinc-400 mt-0.5">
-              {totalVoiceSetsCount} / {totalCompletedSetsCount || 1} sets hands-free
+              Direct exercise match • Zero edits needed
             </p>
           </div>
         </div>
@@ -148,30 +131,12 @@ export function AcousticIntelligenceSection({
               </span>
             </div>
             <p className="text-[11px] text-zinc-400 mt-0.5">
-              Phonetic decoding certainty
+              Phonetic audio decoding certainty
             </p>
           </div>
         </div>
 
-        {/* Card 3: First-Pass Parsing Rate */}
-        <div className="p-3.5 rounded-2xl bg-zinc-950 border border-zinc-850 flex flex-col justify-between">
-          <div className="flex items-center justify-between text-zinc-400 mb-1">
-            <span className="text-[10px] font-bold uppercase tracking-wider">First-Pass Intent</span>
-            <Sparkles className="h-4 w-4 text-zinc-300" />
-          </div>
-          <div>
-            <div className="flex items-baseline gap-1">
-              <span className="text-2xl font-black text-white tabular-nums tracking-tight font-mono">
-                {avgFirstPass}%
-              </span>
-            </div>
-            <p className="text-[11px] text-zinc-400 mt-0.5">
-              Zero clarification needed
-            </p>
-          </div>
-        </div>
-
-        {/* Card 4: Continuous Learning Adaptations */}
+        {/* Card 3: Continuous Learning Adaptations */}
         <div className="p-3.5 rounded-2xl bg-zinc-950 border border-zinc-850 flex flex-col justify-between">
           <div className="flex items-center justify-between text-zinc-400 mb-1">
             <span className="text-[10px] font-bold uppercase tracking-wider">Learned Lexicon</span>
